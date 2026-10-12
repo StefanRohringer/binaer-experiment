@@ -1,0 +1,1769 @@
+Let me construct a minimal statically-linked ELF64 binary that:
+1. Takes a filename as command-line argument
+2. Opens the file
+3. Counts newline characters
+4. Prints the count as decimal followed by newline to stdout
+5. Exits with code 0
+
+Let me think about the approach:
+
+- Read the entire file (up to 1MB) into memory
+- Count '\n' characters
+- Convert the count to decimal string
+- Write to stdout
+- Exit
+
+I need to craft this as a raw ELF64 binary. Let me plan the structure:
+
+**ELF64 Header:**
+- Magic: 7F 45 4C 46
+- EI_CLASS: 02 (64-bit)
+- EI_DATA: 01 (little-endian)
+- EI_VERSION: 01
+- EI_OS/ABI: 00
+- EI_ABIVERSION: 00
+- e_ident[8..15]: 00 00 00 00 00 00 00 00
+- e_type: 02 (EXEC)
+- e_machine: 3C (x86-64)
+- e_version: 01
+- e_entry: 0x40 (or some offset)
+- e_phoff: offset to program headers
+- e_shoff: 0
+- e_flags: 0
+- e_ehdrsize: 64
+- e_phentsize: 56
+- e_phnum: 1
+- e_shentsize: 0
+- e_shnum: 0
+
+**Program Header:**
+- p_type: 0x1 (PT_LOAD)
+- p_flags: 5 (R|X)
+- p_offset: 0
+- p_vaddr: 0x400000 (or 0x0)
+- p_paddr: 0
+- p_filesz: size of binary
+- p_memsz: same
+- p_aln: 0x1000
+- p_align: 0x1000
+
+**Code section (at vaddr 0x1000 or similar):**
+
+Let me think about the code more carefully. I'll use a simple approach:
+
+1. Read argv from stack
+2. Open file
+3. Read entire file into buffer (up to 1MB)
+4. Count newlines
+5. Print count
+6. Write newline
+7. Exit
+
+Let me plan the code:
+
+```
+.entry:
+    ; rdi = argv[1] (filename)
+    ; rsi = argc, rdi = argv (shift)
+    push rbp
+    mov rbp, rsp
+    mov rdi, [rbp+16]  ; argv[1]
+    ; open file
+    xor rsi, rsi        ; O_RDONLY = 0
+    mov rax, 2          ; open
+    syscall
+    ; rax = fd or -1
+    test rax, rax
+    jns .open_ok
+    ; exit(1)
+    mov rax, 60
+    mov rdi, 1
+    syscall
+
+.open_ok:
+    ; rax = fd
+    ; read into buffer at 0x2000 (or stack)
+    mov rdi, rax        ; fd
+    mov rsi, 0x2000    ; buffer
+    mov rdx, 0x100000  ; 1MB
+    xor rax, rax       ; read
+    syscall
+    ; rax = bytes read or -1
+    test rax, rax
+    jns .read_ok
+    
+    ; exit(1)
+    mov rax, 60
+    mov rdi, 1
+    syscall
+
+.read_ok:
+    ; rax = count of bytes read
+    ; count newlines in buffer [0x2000, 0x2000+rax)
+    mov rcx, rax       ; count to check
+    xor rdx, rdx       ; newline count
+    mov rsi, 0x2000    ; buffer
+    .count_loop:
+    test rcx, rcx
+    je .count_done
+    movzx rax, byte [rsi]
+    cmp al, 0x0A
+    je .is_nl
+    inc rsi
+    dec rcx
+    jmp .count_loop
+    .is_nl:
+    inc rdx
+    inc rsi
+    dec rcx
+    jmp .count_loop
+    .count_done:
+    ; rdx = newline count
+    ; convert to decimal
+    ; we'll build string in buffer area
+    mov rbx, 0x2000 + 100  ; where to store the number string
+    ; Actually, let's store it at a fixed location
+    ; Let's use 0x3000 area for the number
+    
+    ; Convert rdx to decimal
+    mov rdi, 0x3000       ; write position (we'll write backwards)
+    ; Actually, let me write to a known location
+    ; Let's use 0x4000 for the output string
+    
+    mov rdi, 0x4000 + 20  ; max digits for a number < 1000000 (7 digits + null)
+    mov rax, rdx          ; rdx = count
+    mov rax, rdi          ; hmm, I need to save the count
+    
+    ; Let me redo this. I'll use rbx for the count.
+    ; rbx = newline count (from rdx above)
+    
+    ; Convert to decimal string at 0x4000
+    ; Start from end, write backwards
+    
+    mov rsi, 0x4000 + 20   ; end position
+    mov rbx, 10            ; base
+    
+    ; Check if count is 0
+    test rdx, rdx
+    jz .zero_count
+    
+    .conv_loop:
+    mov rax, rdx
+    xor r9, r9
+    div rbx
+    ; rax = quotient, r9 = remainder
+    add cl, ... 
+    ; Hmm, I need to store remainder
+    add r9, 30  ; convert to ASCII
+    mov [rsi-1], cl    ; wait, r9 is 64-bit, I need low byte
+    ; mov [rsi-1], al  ; rax has quotient in low bits... no
+    ; Let me be more careful
+    
+    ; After div rbx (64-bit div):
+    ; rax = quotient
+    ; rdx = remainder
+    
+    ; rdx has the remainder
+    add dl, 30
+    mov [rsi-1], dl
+    dec rsi
+    test rax, rax
+    jz .conv_done
+    jmp .conv_loop
+    
+    .zero_count:
+    ; write '0' at 0x4000
+    mov byte [0x4000], '0'
+    
+    .conv_done:
+    ; rsi points to start of number string
+    ; Now write number + newline to stdout
+    ; First write the number
+    mov rdi, 1           ; stdout
+    mov rsi, rsi         ; number string start
+    mov rdx, ...         ; length = (0x4000 + 20) - rsi
+    mov rax, 1           ; write
+    syscall
+    
+    ; Write newline
+    mov byte [0x4000+20], 10  ; newline at end
+    ; Actually let me restructure
+    
+    mov rdi, 1
+    mov rsi, rsi         ; number start
+    ; calculate length: 0x4000+20 - rsi
+    mov rdx, rsi
+    sub rdx, rsi... no
+    
+    Let me restructure the whole thing more carefully.
+```
+
+Let me redesign:
+
+**Stack layout at entry (typical x86-64 Linux):**
+```
+[rsp+0]  = 0 (return address, not used)
+[rsp+8]  = rax (from _start? no)
+```
+
+Actually for a static binary with no libc, the kernel sets up the stack like this:
+```
+rsp = pointer to (argc, argv[0], argv[1], ..., NULL)
+[argv[0]] = pointer to null-terminated string (argc)
+[argv[1]] = pointer to null-terminated string (arg1 = filename)
+```
+
+Wait, actually the layout is:
+- [rsp] = 0 (padding/return address)
+- [rsp+8] = argc
+- [rsp+16] = argv[0]
+- [rsp+24] = argv[1]
+- ...
+- [rsp+8*argc + 8*argcount+1] = NULL pointer
+
+Hmm, actually the standard layout is:
+- [rsp] = 0
+- [rsp+8] = argc
+- [rsp+16] = argv[0]
+- [rsp+24] = argv[1]
+
+So:
+```
+mov rsi, [rsp+8]    ; rsi = argc
+mov rdi, [rsp+16]   ; rdi = argv[0]  -- not needed
+mov rdi, [rsp+24]   ; rdi = argv[1]  -- filename
+```
+
+Wait, I don't need to save the stack frame. Let me just use rsp directly:
+- argv[1] is at [rsp+24] if we haven't modified rsp. Actually wait, at .entry, rsp points to:
+  - [rsp] = 0
+  - [rsp+8] = argc
+  - [rsp+16] = argv[0]
+  - [rsp+24] = argv[1]
+
+So `mov rdi, [rsp+24]` gives us argv[1].
+
+Now let me think about the memory layout:
+- 0x0-0x100: ELF header
+- 0x100-0x158: Program header (56 bytes)
+- 0x160-...: Code (aligned to page?)
+
+Actually, for a simpler approach, I can put everything at a specific offset. Let me use:
+- ELF header: 0x0000 to 0x003F (64 bytes)
+- Program header: 0x0040 to 0x0077 (56 bytes)
+- Code: 0x0080 onwards
+
+Wait, but PT_LOAD has p_offset and p_vaddr. If I set p_offset=0, p_vaddr=0, p_aln=0x1000, p_align=0x1000, then the file must be 1 page aligned. But the file is only ~150-200 bytes, so it won't fill a full page. The kernel will load it and the pages after will be zero-filled (for PT_LOAD).
+
+Actually, let me simplify:
+- p_offset = 0
+- p_vaddr = 0
+- p_paddr = 0  
+- p_filesz = file_size
+- p_memsz = file_size
+- p_aln = 0x1000
+- p_align = 0x1000
+
+This means the binary starts at virtual address 0. The entry point should be at some offset within the file.
+
+Let me set entry to 0x100 (after headers + padding).
+
+Actually, let me think about this differently. The file layout:
+- Bytes 0x000-0x03F: ELF header (64 bytes)
+- Bytes 0x040-0x077: Program header (56 bytes)  
+- Bytes 0x080-0x09F: padding (32 bytes to get to 0xA0)
+
+Hmm, actually I don't need page alignment in the file if p_align is 0x1000. The p_align refers to virtual address alignment. The file doesn't need to be padded.
+
+Let me use:
+- e_entry = 0x100 (256)
+- Code starts at offset 0x80 (right after program header)
+
+Wait, let me recheck. The program header is at e_phoff. If I put the program header at offset 0x40 (after the ELF header), it's 56 bytes, so code can start at 0x78. But I want the entry at 0x100 for safety.
+
+Let me just do:
+- e_entry = 0x100
+- Code at file offset 0x100
+- p_filesz = 0x100 + code_size
+- p_memsz = same
+- e_phoff = 0x40
+
+File layout:
+- 0x000-0x03F: ELF header
+- 0x040-0x077: Program header (56 bytes)
+- 0x078-0x0FF: padding (0x38 = 56 bytes)
+- 0x100: Code starts
+
+Now the code. Let me write it carefully:
+
+```asm
+; rdi = argv[1] (filename)
+; Read it, open file, read, count newlines, print, exit
+
+  mov rsi, [rsp+24]      ; rsi = argv[1] (filename)
+  ; open
+  xor rdi, rdi           ; rdi = fd = 0... no wait
+  mov rdi, rsi           ; rdi = filename
+  xor rsi, rsi           ; rsi = flags = 0 (O_RDONLY)
+  mov rax, 2             ; open
+  syscall
+  test rax, rax
+  jns .open_ok
+  mov rax, 60
+  mov rdi, 1
+  syscall
+
+.open_ok:
+  ; rax = fd
+  mov rsi, rax           ; rsi = fd (for read)
+  ; Actually let me keep fd in a register
+  ; Let's use rsi = fd
+  mov rsi, rax           ; rsi = fd
+  
+  ; read
+  xor rax, rax           ; sys_read
+  mov rdi, rsi           ; rdi = fd
+  mov rsi, 0x2000        ; buffer at 0x2000 (read-only page area? no, we'll write to it)
+  mov rdx, 0x100000      ; max 1MB
+  syscall
+  test rax, rax
+  jns .read_ok
+  mov rax, 60
+  mov rdi, 1
+  syscall
+
+.read_ok:
+  ; rax = bytes read, rsi = fd (no longer needed)
+  ; Count newlines in [0x2000, 0x2000+rax)
+  mov rcx, rax           ; rcx = remaining bytes
+  xor rdx, rdx           ; rdx = count
+  mov rsi, 0x2000
+  .loop:
+  test rcx, rcx
+  je .done
+  movzx rax, BYTE PTR [rsi]
+  cmp al, 0x0A
+  je .nl
+  inc rsi
+  dec rcx
+  jmp .loop
+.nl:
+  inc rdx
+  inc rsi
+  dec rcx
+  jmp .loop
+.done:
+  ; rdx = newline count
+  ; Convert to decimal
+  
+  ; We'll write the number to 0x4000
+  ; First, handle 0 case
+  test rdx, rdx
+  je .is_zero
+  
+  mov rsi, 0x4000 + 19   ; position to write last digit (max 10 digits for 1MB)
+  .conv:
+  mov rax, rdx
+  xor rdx2, ...
+  
+  ; div rbx where rbx = 10
+  mov rax, rdx
+  mov rbx, 10
+  div rbx
+  ; rax = quotient, rdx = remainder
+  add dl, 30
+  mov [rsi], dl
+  dec rsi
+  test rax, rax
+  jz .conv_done
+  jmp .conv
+  
+.is_zero:
+  mov byte [rsi], ...
+  ; rsi is already at 0x4000+19? No, we haven't set it.
+  
+  ; For zero case, write '0' at 0x4000
+  mov byte [0x4000], 30
+  mov rsi, 0x4000
+  jmp .print_start
+
+.conv_done:
+  ; rsi = start of number
+
+.print_start:
+  ; write number to stdout
+  mov rdi, 1            ; stdout
+  mov rsi, rsi          ; start of number
+  ; length = 0x4000 + 19 + 1 - rsi = 0x400A - rsi
+  mov rdx, 0x400A
+  sub rdx, rsi
+  mov rax, 1            ; write
+  syscall
+  
+  ; write newline
+  mov byte [0x400A], 10
+  mov rdi, 1
+  mov rsi, 0x400A
+  mov rdx, 1
+  mov rax, 1
+  syscall
+  
+  ; exit(0)
+  mov rax, 60
+  xor rdi, rdi
+  syscall
+```
+
+Wait, I need to be more careful with the conv loop. Let me re-examine:
+
+After `mov rbx, 10` and `div rbx` (64-bit division):
+- rax = quotient (rdiv / rbx, where rdiv = rax:rdx before)
+- rdx = remainder
+
+But I need rax:rdx to be the full dividend. Before div, I should do:
+```
+mov rax, rdx  ; move count to rax
+xor rdx, rdx  ; clear upper part
+mov rbx, 10
+div rbx       ; rax = count/10, rdx = count%10
+```
+
+Yes, that's correct.
+
+Now let me also think about: what if the file is empty (0 bytes)? Then rdx = 0, we go to .is_zero, write '0' at 0x4000.
+
+Let me also handle: what if argv[1] is NULL or argc < 2? The problem says "Das erste Kommandozeilenargument ist ein Dateipfad" - I'll assume it's always provided. But to be safe, if argc < 2, I could exit with 1. Let me add a simple check.
+
+Actually, let me keep it simple and assume the argument is always provided as per the problem statement.
+
+Now let me carefully write the machine code:
+
+```
+; Entry at 0x100
+; Stack: [rsp+0]=0, [rsp+8]=argc, [rsp+16]=argv[0], [rsp+24]=argv[1]
+
+; mov rsi, [rsp+24]  ->  0F 35 ... 
+```
+
+Wait, let me think about the addressing modes.
+
+`mov rsi, [rsp+24]` in 64-bit:
+- opcode: 49 05 (REX.W + REX.R, mov r/m, r)
+- ModRM: mod=00, reg=rsi(011), r/m=[rsp+disp]
+
+Actually in 64-bit, `mov rsi, [rsp+24]`:
+- REX.W bit set (0x48)
+- opcode 0x8B (mov r64, m64)
+- ModRM: 0x05 (mod=00, reg=010 which is... wait)
+
+Let me use the standard encoding:
+- `mov rsi, [rsp+24]`
+- 64-bit mov r/m -> r: opcode 48 8B (REX.W + 8B)
+- ModRM: 
+  - mod = 00
+  - reg field = rsi = 010 (since it's the destination)
+  - r/m field: for [rsp+disp], r/m = 100 (rsp in 64-bit)
+  - disp = 24 = 0x18
+  
+  Wait, for REXX, mod 00, r/m 100, the displacement is 32-bit. But 24 fits in 8-bit, so I can use mod=01, r/m=100, disp8=24.
+  
+  Actually, mod=00, r/m=100 means no displacement in 64-bit mode! It always means [rsp] (no displacement).
+  
+  So I need mod=01 (disp8), r/m=100:
+  - ModRM byte = 0x85 (mod=01, reg=010, r/m=100)
+  - disp8 = 0x18
+  
+  So: 48 8B 85 18
+  
+  Wait, let me double-check. In 64-bit mode:
+  - Mod=00, R/M=100: [RSP] (no displacement)
+  - Mod=01, R/M=100: [RSP+disp8]
+  
+  Yes, so mod=01 is needed.
+  ModRM = (01 << 4) | (010 << 1) | 100 = 0x80 + 0x0A + 0x04 = 0x85
+  Then disp8 = 0x18
+  
+  So: 48 8B 85 18
+
+Actually wait, I'm confusing myself. Let me be very careful.
+
+For `mov rsi, [rsp+24]`:
+- REX prefix: 48 (R=0, E=0, W=1, X=0) -> 48
+- Opcode: 8B (mov r64, m64)
+- ModRM:
+  - mod = 01 (8-bit displacement)
+  - reg = rsi = 010
+  - r/m = rsp = 100 (in 64-bit, REX.B not needed for rsp)
+  - ModRM byte = (01 << 4) | (010 << 1) | (100) = 0x10 | 0x0A | 0x04 = 0x84
+  
+  Wait: (01 << 4) = 0x10, (010 << 1) = 0x0A, (100) = 0x04
+  0x10 + 0x0A + 0x04 = 0x1E? No...
+  
+  ModRM = mod(2 bits) | reg(3 bits) | r/m(3 bits)
+  = 01 | 010 | 100
+  = 01010100 = 0x54
+  
+  Ah I was wrong. Let me redo:
+  - mod = 01 (2 bits)
+  - reg = rsi = 010 (3 bits)  
+  - r/m = [rsp] = 100 (3 bits, RSP in 64-bit)
+  
+  ModRM = 0b01010100 = 0x54
+  
+  Then disp8 = 0x18
+
+So: 48 8B 54 18
+
+Wait, I need to double check. REX.R affects the reg field. Without REX.R, reg field is 3 bits. rsi is encoded as 010 in the reg field. Yes.
+
+Actually, let me re-examine. In REX.W 8B encoding:
+- The reg field (3 bits) selects the destination register. Without REX.R, rsi = 010.
+- The r/m field (3 bits): without REX.B, 100 = RSP.
+- mod = 01 for 8-bit displacement.
+
+So ModRM = 0b01_010_100 = 0b01010100 = 0x54.
+
+`mov rsi, [rsp+24]` = `48 8B 54 18`
+
+Let me continue with the full code:
+
+```asm
+; .entry: 0x100
+; mov rsi, [rsp+24]   ; argv[1]
+48 8B 54 18
+
+; open: sys_open(rdi=filename, flags=0)
+; rdi is already filename (from rsi? no, I need rdi)
+; Actually, I put filename in rsi. Let me use rdi for the syscall.
+; sys_open: rdi=fd, rsi=filename, rdx=flags
+; Wait, the syscall convention is:
+; rdi = fd
+; rsi = filename (path)
+; rdx = flags
+; rax = 2 (sys_open)
+
+; So: rdi = fd (for open, rdi is actually unused for open... 
+; Let me check: sys_open(int fd, ...) - no wait
+; syscall: 
+;   rax = syscall number
+;   rdi = arg1
+;   rsi = arg2  
+;   rdx = arg3
+; sys_open(int __fd, const char *path, int flags, ...)
+; Actually the signature is: sys_open(int path, int flags)
+; No wait: open(const char *pathname, int flags, ...)
+; So: rdi = pathname (string pointer), rsi = flags, rdx = mode (for O_CREAT)
+
+; For O_RDONLY (0): 
+;   rdi = filename
+;   rsi = 0
+;   rdx = 0 (mode, unused since not creating)
+
+48 8B 54 18      ; rsi = [rsp+24] = filename... 
+
+Wait, I need to move this to rdi. Let me restructure:
+
+; rsi = filename
+48 8B 54 18
+; Now I need: rdi=filename, rsi=0, rax=2
+48 8B 54 18  is rsi = [rsp+24]
+
+Then:
+48 8B 54 18   ; rsi = [rsp+24]  (filename)
+48 89 F1      ; rdi = rsi? No that's rdi = [r?1]... 
+
+Hmm, let me think differently. 
+
+48 8B 54 18   ; rsi = [rsp+24] = filename
+
+Now for open:
+48 8B 54 18   ; already done, rsi = filename
+48 8B 54 18   ; no wait, I already have it in rsi
+
+To set up open:
+- rax = 2 (open)
+- rdi = filename (currently in rsi, need to move)
+- rsi = 0 (O_RDONLY)
+- rdx = 0 (mode)
+
+48 8B 54 18   ; rsi = [rsp+24]
+48 89 F1      ; rdi = rsi -- wait, that's mov rdi, rsi? No!
+
+Actually, mov rsi, rdi = 48 89 F1? No:
+- 48 89 = mov r64, r64 (REX.W + 89)
+- ModRM: mod=11, reg=r, r/m=r
+- For mov rdi, rsi:
+  - reg = rsi = 010
+  - r/m = rdi = 001
+  - mod = 11
+  - ModRM = 0b11010001 = 0xD1
+  - So: 48 89 D1
+
+Wait, I'm getting confused. Let me be very careful.
+
+`mov rdi, rsi`:
+- REX.W: 48
+- Opcode: 89 (mov r/m, r)
+- ModRM: mod=11, reg=source (rsi=010), r/m=dest (rdi=001)
+- ModRM = (11 << 4) | (010 << 1) | 001 = 0xC0 | 0x0A | 0x01 = 0xCA
+
+So: 48 89 CA
+
+Let me redo. `mov r/m, r` format:
+- reg field = source register
+- r/m field = destination (memory or register)
+
+For `mov rdi, rsi`:
+- Source = rsi = 010
+- Dest = rdi = 001
+- mod = 11
+- ModRM = 0b11 010 001 = 0b11010001 = 0xD1
+
+Wait: 11 010 001
+11 = 0xC0
+010 = 0x08 (shifted: 010 << 1 = 0100 = 4)
+001 = 1
+Total: 12*16... no.
+
+ModRM byte:
+- Bits 7-6: mod = 11
+- Bits 5-3: reg = 010 (rsi)
+- Bits 2-0: r/m = 001 (rdi)
+
+So: 0b11_010_001 = 11010001_2 = 257... no that's > 255.
+
+Wait: 11010001_2 = 128+32+16+1 = 177 = 0xB1
+
+Let me compute: 
+- 11 010 001
+- = (3 << 6) | (2 << 3) | (1)
+- = 192 | 16 | 1
+- = 209
+- = 0xD1
+
+OK so: 48 89 D1
+
+Let me verify: REX.W(48) + 89 + D1 = mov rdi, rsi. Yes.
+
+OK this is getting tedious but I need to be very careful. Let me plan the full byte sequence:
+
+**ELF Header (64 bytes at offset 0):**
+```
+7f 45 4c 46        ; magic
+02                  ; EI_CLASS (64-bit)
+01                  ; EI_DATA (LE)
+01                  ; EI_VERSION
+00                  ; OS/ABI
+00                  ; ABI version
+00 00 00 00 00 00 00 00  ; padding (8 bytes)
+02 00               ; e_type (EXEC)
+3c 00               ; e_machine (x86-64)
+01 00 00 00         ; e_version
+00 00 00 00         ; e_entry (offset 0)
+```
+
+Wait, e_entry should be the virtual address of the entry. If I map at vaddr 0, and code is at file offset 0x100, then e_entry = 0x100.
+
+Let me set:
+- e_entry = 0x100
+
+```
+7f 45 4c 46  02 01 01 00  00 00 00 00 00 00 00 00  ; e_ident (16)
+02 00         ; e_type = 2
+3c 00         ; e_machine = 0x3c
+01 00 00 00   ; e_version = 1
+00 10 00 00   ; e_entry = 0x100
+40 00 00 00   ; e_phoff = 0x40
+00 00 00 00   ; e_shoff = 0
+00 00 00 00   ; e_flags = 0
+40 00         ; e_ehdrsize = 64
+38 00         ; e_phentsize = 56
+01 00         ; e_phnum = 1
+00 00 00 00   ; e_shentsize = 0
+00 00 00 00   ; e_shnum = 0
+00 00 00 00   ; e_shstrndx = 0
+```
+
+**Program Header (56 bytes at offset 0x40):**
+```
+01 00 00 00      ; p_type = PT_LOAD (1)
+05 00 00 00      ; p_flags = 5 (R+X)
+00 00 00 00      ; p_offset = 0
+00 00 00 00      ; p_vaddr = 0
+00 00 00 00      ; p_paddr = 0
+XX XX XX XX      ; p_filesz (file size)
+XX XX XX XX      ; p_memsz (same)
+10 00 00 00      ; p_aln = 0x1000
+10 00 00 00      ; p_align = 0x1000
+```
+
+**Code at offset 0x100:**
+
+Let me write out the full code and then convert to hex.
+
+```asm
+; Entry at 0x100
+; [rsp] = 0, [rsp+8] = argc, [rsp+16] = argv[0], [rsp+24] = argv[1]
+
+; Check argc >= 2
+; rsi = argc
+48 8B 08        ; mov rsi, [rax]... no that's not right
+
+Hmm, wait. Let me reconsider the stack layout.
+
+At .entry (before any instruction):
+rsp points to:
+[rsp+0]  = 0 (padding)
+[rsp+8]  = argc
+[rsp+16] = argv[0]
+[rsp+24] = argv[1]
+...
+[rsp+8*(argc-1)+24]... 
+
+Actually the layout is:
+[rsp+0] = 0
+[rsp+8] = argc
+[rsp+16] = argv[0]
+[rsp+24] = argv[1]
+...
+[rsp+8*argc + 8] = NULL pointer? 
+
+Let me just use [rsp+24] for argv[1].
+
+For argc, I can use [rsp+8].
+
+Let me just assume argc >= 2 (as per problem). If not, open will fail and we'll exit(1).
+
+Code:
+
+0x100: 48 8B 54 18     ; mov rsi, [rsp+24]  (filename)
+0x104: 48 33 D8        ; xor rax, rax     (rax = 0, for flags... wait)
+
+Actually let me plan the syscalls:
+
+sys_open: rax=2, rdi=path, rsi=flags, rdx=mode
+sys_read: rax=0, rdi=fd, rsi=buf, rdx=size
+sys_write: rax=1, rdi=fd, rsi=buf, rdx=size
+sys_exit: rax=60, rdi=code
+
+For open:
+0x100: 48 8B 54 18     ; mov rsi, [rsp+24]   (rsi = filename)
+0x104: 48 89 F1        ; mov rdi, rsi        (rdi = filename)
+Wait: 48 89 CA is mov rdi, rsi... 
+
+Let me recheck:
+mov rdi, rsi:
+- REX.W (48) + opcode 89 (mov r/m, r)
+- ModRM: mod=11, reg=source=rsi(010), r/m=dest=rdi(001)
+- = 0b11 010 001 = 0b11010001 = 0xD1
+
+So: 48 89 D1
+
+0x100: 48 8B 54 18     ; mov rsi, [rsp+24]
+0x104: 48 89 D1        ; mov rdi, rsi
+0x107: B2 02           ; mov dl, 2   (low byte of rax = 2)
+Wait, I want to set rax = 2.
+0x107: B2 02 is mov dl, 02 which sets byte [rdx]? No!
+
+mov dl, 2: opcode B2 (mov r8, imm8), reg=dl (2), imm=02
+But I want rax = 2. Let me do:
+0x107: B0 02           ; mov al, 2  (sets low byte of rax)
+
+Actually that's cleaner. Since rax was already used... let me just set it directly.
+
+Let me redo more carefully:
+
+```
+; 0x100: mov rsi, [rsp+24]          ; rsi = argv[1]
+; 0x104: mov rdi, rsi              ; rdi = filename
+; 0x107: mov al, 2                 ; rax = 2 (open)  [after clearing rax first?]
+```
+
+Wait, I need rax = 2. If rax has garbage, I need to clear it. Let me do:
+```
+; 0x107: 48 31 C0               ; xor eax, eax  (clear rax)
+; 0x10A: B0 02                   ; mov al, 2    (rax = 2)
+```
+
+Or more simply:
+```
+; 0x107: 48 C7 C0 02 00 00 00   ; mov rax, 2
+```
+
+That's 7 bytes. Let me just use that.
+
+OK let me be more systematic. I'll write the full code and count bytes:
+
+```
+; --- ENTRY 0x100 ---
+; rsi = filename
+48 8B 54 18        ; mov rsi, [rsp+24]           (5 bytes)
+; rdi = filename, rsi=0, rax=2
+48 89 D1           ; mov rdi, rsi               (3 bytes)
+48 31 C9           ; xor rsi, rsi               (3 bytes)  -- wait this clears rsi but I need rsi=0 for flags
+B8 02 00 00 00     ; mov rax, 2                 (5 bytes)  -- open
+05                  ; syscall                   (1 byte)
+; test rax, rax
+48 83 38 00        ; test al, 0x00? no...
+; Actually: test rax, rax
+48 83 38 00        ; test byte [rax+0], 0 -- no that's not right
+
+Let me use: 
+; test rax, rax
+48 31 C0           ; xor eax, eax? No! That changes rax.
+48 83 38 00        ; test al, al? No...
+
+; test rax, rax: 48 85 C0
+Yes: 48 85 C0 is test rax, rax.
+```
+
+Let me restart with a cleaner approach and be very methodical.
+
+**Full code plan:**
+
+```
+; 0x100: Entry
+; Stack: [rsp]=0, [rsp+8]=argc, [rsp+16]=argv[0], [rsp+24]=argv[1]
+
+; Load filename
+  mov rsi, [rsp+24]       ; rsi = argv[1]
+; open
+  mov rdi, rsi            ; rdi = path
+  xor rsi, rsi            ; rsi = flags = 0
+  mov rax, 2              ; rax = sys_open
+  syscall
+  test rax, rax
+  jns .open_ok
+  mov rax, 60
+  mov rdi, 1
+  syscall
+.open_ok:
+; rax = fd
+  mov rsi, rax            ; rsi = fd (keep for later)
+; read
+  mov rdi, rax            ; rdi = fd
+  mov rsi, 0x2000         ; rsi = buffer
+  mov rdx, 0x100000       ; rdx = 1MB
+  xor rax, rax            ; rax = sys_read
+  syscall
+  test rax, rax
+  jns .read_ok
+  mov rax, 60
+  mov rdi, 1
+  syscall
+.read_ok:
+; rax = bytes read
+; Count newlines
+  mov rcx, rax            ; rcx = bytes remaining
+  xor rdx, rdx            ; rdx = newline count
+  mov rsi, 0x2000         ; rsi = buffer pointer
+.count_loop:
+  test rcx, rcx
+  je .count_done
+  movzx eax, byte [rsi]
+  cmp al, 10
+  je .is_nl
+  inc rsi
+  dec rcx
+  jmp .count_loop
+.is_nl:
+  inc rdx
+  inc rsi
+  dec rcx
+  jmp .count_loop
+.count_done:
+; rdx = newline count, rsi = buffer + bytes_read
+; Convert to decimal string at 0x4000
+  test rdx, rdx
+  je .zero
+  mov rsi, 0x4019         ; rsi = last position to write (0x4000+25)
+  .conv_loop:
+  mov rax, rdx
+  xor rdx, rdx            ; clear upper
+  mov rbx, 10
+  div rbx                 ; rax=count/10, rdx=count%10
+  add dl, 30
+  mov [rsi], dl
+  dec rsi
+  test rax, rax
+  jnz .conv_loop
+  jmp .conv_done
+.zero:
+  mov byte [0x4000], 48   ; '0'
+  mov rsi, 0x4000
+  jmp .conv_done
+.conv_done:
+; rsi = start of number string
+; write to stdout
+  mov rdi, 1              ; stdout
+  mov rax, 1              ; sys_write
+  mov rdx, 0x401A         ; 0x4000+26 (max length + 1 for newline)
+  sub rdx, rsi
+  syscall
+; write newline
+  mov byte [0x4000+26], 10
+  mov rdi, 1
+  mov rsi, 0x4000+26
+  mov rdx, 1
+  mov rax, 1
+  syscall
+; exit(0)
+  mov rax, 60
+  xor rdi, rdi
+  syscall
+```
+
+Hmm wait, there's an issue. When I do `mov [rsi], dl` in the conv loop, I'm overwriting the buffer at 0x2000 if rsi is still pointing there... No, I reset rsi to 0x4019 before the loop. That's fine.
+
+But there's another issue: in the conv loop, I do `xor rdx, rdx` but rdx holds the remainder. Wait no:
+
+```
+mov rax, rdx     ; rax = count
+xor rdx, rdx     ; rdx = 0 (for 64-bit div, rdx:rax is the dividend)
+mov rbx, 10
+div rbx          ; rax = rax/10, rdx = rax%10
+```
+
+That's correct. rdx is zeroed before div, so the 64-bit div uses rdx:rax as the dividend.
+
+But wait - after `div rbx`, rdx = remainder. Then `add dl, 30` converts to ASCII. Then `mov [rsi], dl`. Good.
+
+Now let me handle the buffer write for the number. I'm writing to 0x4019 down to 0x4000 (max 26 chars). For a file of 1MB, max newlines = 1048576 = "1048576" (7 digits). So 0x4000+7 is the end. That's well within 0x401A.
+
+Wait, 0x4019 = 0x4000 + 25. If I write from 0x4019 backwards, the first digit goes to 0x4019, then 0x4018, etc. For a 7-digit number, the last digit is at 0x4019-6 = 0x4013. So the number spans 0x4013 to 0x4019.
+
+Then `sub rdx, rsi` at the end gives: 0x401A - rsi = 0x401A - 0x4013 = 7. That's correct!
+
+Actually wait, I wrote `mov rdx, 0x401A` then `sub rdx, rsi`. So rdx = 0x401A - (start of string). If the string is "1048576" at 0x4013-0x4019, then rdx = 0x401A - 0x4013 = 7. Good.
+
+But wait, what about the newline? I'm writing just the number in the first write syscall. Then I write the newline separately. That should work.
+
+Actually, let me simplify: write the number + newline as one string. I'll append a newline character right after the last digit.
+
+In the conv loop:
+- After the loop, rsi points to the start of the number.
+- The last digit was written at rsi+1 (since we did dec rsi after writing).
+
+Wait no. Let me trace:
+- rsi starts at 0x4019
+- Write digit at [rsi], then dec rsi
+- So digits are at 0x4019, 0x4018, ... 
+- After the loop, rsi points one byte before the first digit.
+
+So if rsi = 0x4012, digits are at 0x4013 through 0x4019.
+
+For the newline, I can put it at 0x401A (one past the last possible digit position). Then write from 0x4013 (or wherever rsi points) with length (0x401A - rsi).
+
+Wait, I need to put the newline at the right position. Let me put it at [rsi + length_of_number]. But it's easier to just:
+1. Put newline at 0x401A (fixed position)
+2. Write from rsi (start of number) to 0x401A (exclusive) = length is 0x401A - rsi
+
+But 0x401A might not be where the last digit is. The last digit is at 0x4019 (max). So 0x401A is always right after the last digit. 
+
+Actually, I should put the newline at a fixed location and calculate length from rsi to that location. Let me put the newline at 0x401A always:
+
+```
+; At .conv_done:
+  mov byte [0x401A], 10    ; put newline at fixed position
+  mov rdi, 1               ; stdout
+  mov rsi, rsi            ; number start
+  mov rdx, 0x401A          ; end position
+  sub rdx, rsi             ; length
+  mov rax, 1               ; sys_write
+  syscall
+```
+
+This is cleaner. One write syscall for both number and newline.
+
+But wait, for the zero case: number is "0" at 0x4000. I need the newline to be at 0x4001, not 0x401A.
+
+Let me handle zero case differently:
+```
+.zero:
+  mov rsi, 0x4000
+  mov byte [0x4000], 48   ; '0'
+  mov byte [0x4001], 10   ; newline
+  mov rdi, 1
+  mov rdx, 2
+  mov rax, 1
+  syscall
+  ; exit(0)
+```
+
+Or I can just:
+```
+.zero:
+  mov rsi, 0x4000
+  mov byte [0x4000], 48
+  jmp .write_str
+.write_str:
+  mov rdi, 1
+  mov rax, 1
+  mov rdx, 0x401A
+  sub rdx, rsi
+  syscall
+```
+
+But for zero, rsi=0x4000 and 0x401A - 0x4000 = 26, which would include lots of zeros/garbage.
+
+OK let me just handle the zero case by putting the newline right after '0':
+
+```
+.zero:
+  mov byte [0x4000], 48   ; '0'
+  mov byte [0x4001], 10   ; '\n'
+  mov rsi, 0x4000
+  mov rdx, 2
+  jmp .write
+```
+
+And for the normal case, after conv loop, rsi = start, and I write 0x401A - rsi bytes (including the newline I put at 0x401A).
+
+Actually wait, for the zero case I could also just do:
+```
+.zero:
+  mov rsi, 0x4000
+  mov byte [0x4000], 48   ; '0'
+  ; fall through to write_str but need different length
+```
+
+Let me just handle it explicitly:
+
+```
+.zero:
+  mov rsi, 0x4000
+  mov byte [0x4000], 48
+  mov byte [0x4001], 10
+  mov rdi, 1
+  mov rdx, 2
+  mov rax, 1
+  syscall
+  ; exit
+  mov rax, 60
+  xor rdi, rdi
+  syscall
+```
+
+And for non-zero:
+```
+.conv_done:
+  mov byte [0x401A], 10
+  mov rdi, 1
+  mov rdx, 0x401A
+  sub rdx, rsi
+  mov rax, 1
+  syscall
+  mov rax, 60
+  xor rdi, rdi
+  syscall
+```
+
+OK let me now write out the complete byte sequence.
+
+Let me lay out the code:
+
+```
+; 0x100: Entry
+0x100: 48 8B 54 18        ; mov rsi, [rsp+24]           (5 bytes)
+0x105: 48 89 D1           ; mov rdi, rsi               (3 bytes)
+0x108: 48 31 C9           ; xor rsi, rsi               (3 bytes)
+0x10B: 48 C7 C0 02 00 00 00  ; mov rax, 2              (7 bytes)
+0x112: 0F 05              ; syscall                   (2 bytes)
+0x114: 48 85 C0           ; test rax, rax              (3 bytes)
+0x117: 0F 87 24 01 00 00  ; jns +0x124                 (7 bytes)
+0x11E: 48 C7 C0 3C 00 00 00  ; mov rax, 60             (7 bytes)
+0x125: 48 C7 C7 01 00 00 00  ; mov rdi, 1              (7 bytes)
+0x12C: 0F 05              ; syscall                   (2 bytes)
+```
+
+Wait, jns +0x124. From 0x117, the next instruction is at 0x11E. The branch target should be 0x124 (the start of .open_ok). 
+
+Actually, let me recount. After jns, the next byte is at 0x11E. If jns goes to .open_ok which is at 0x12C (after the exit code for failed open), then:
+
+From 0x117:
+- jns rel32: 0F 87 XX XX XX XX
+- Next instruction at: 0x117 + 2 (opcode) + 4 (disp) = 0x11E
+- Target: 0x11E + offset
+
+I want to jump to .open_ok. Let me figure out where .open_ok is.
+
+After the exit code:
+0x11E: mov rax, 60 (7 bytes) -> ends at 0x125
+0x125: mov rdi, 1 (7 bytes) -> ends at 0x12C
+0x12C: syscall (2 bytes) -> ends at 0x12E
+
+So .open_ok is at 0x12E.
+
+From 0x117: jns at 0x117-0x118, rel32 at 0x119-0x11C.
+Next instruction at 0x11D.
+Wait: 0x117 (0F), 0x118 (87), 0x119-0x11C (disp32). Next at 0x11D.
+
+Target = 0x11D + rel32 = 0x12E
+rel32 = 0x12E - 0x11D = 0x11
+
+So jns = 0F 87 11 00 00 00
+
+Let me recount from the start:
+
+```
+0x100: 48 8B 54 18        ; mov rsi, [rsp+24]           (5) -> 0x105
+0x105: 48 89 D1           ; mov rdi, rsi               (3) -> 0x108
+0x108: 48 31 C9           ; xor rsi, rsi               (3) -> 0x10B
+0x10B: 48 C7 C0 02 00 00 00 ; mov rax, 2              (7) -> 0x112
+0x112: 0F 05              ; syscall                   (2) -> 0x114
+0x114: 48 85 C0           ; test rax, rax              (3) -> 0x117
+0x117: 0F 87 11 00 00 00  ; jns 0x12E                (7) -> 0x11E
+0x11E: 48 C7 C0 3C 00 00 00  ; mov rax, 60             (7) -> 0x125
+0x125: B2 01              ; mov dl, 1 ... 
+```
+
+Hmm, for mov rdi, 1, I can use:
+- B2 01 is mov dl, 1 - that sets byte of rdx
+- I need rdi = 1
+
+Options:
+- 48 C7 C7 01 00 00 00 (mov rdi, 1) - 7 bytes
+- or: 48 07 C0... no
+- or: xor rdi, rdi (48 31 FF), add rdi, 1 (48 01 FF, 48 C7 C7 01 00 00 00)
+
+Let me just use the 7-byte form for clarity. Actually, I can save space:
+- 48 31 FF (xor rdi, rdi) = 3 bytes
+- 48 01 FF (add rdi, 1)... wait that's add rdi, imm32? No, 01 is add imm8/r? 
+
+Actually:
+- mov rdi, 1: 48 C7 C7 01 00 00 00 (7 bytes)
+- Or: 48 05 F1 01 00 00 00... no that's add
+
+Simplest: just use 48 C7 C7 01 00 00 00 (7 bytes). Or even simpler:
+- B2 01 sets dl. Then I need to get that into rdi...
+- Actually: mov al, 1; mov rdi, rax... too many steps
+
+Let me just use the 7-byte form. It's fine.
+
+Actually, I realize I can be more compact:
+- `mov rax, 60` = B0 3C (2 bytes) -- no, B0 sets al!
+  - B0 3C sets AL = 0x3C = 60
+  - That's fine if rax was already 0 in upper bytes, but it's not (it holds the return value from syscall).
+  
+  Actually after `syscall`, rax holds the return value. I need to set rax = 60.
+  - 48 C7 C0 3C 00 00 00 (7 bytes) for mov rax, 60
+
+Similarly for rdi=1:
+  - 48 C7 C7 01 00 00 00 (7 bytes)
+
+OK let me just be thorough and use full instructions.
+
+Let me also reconsider: after the failed open, I call exit(1). After that, execution never continues (syscall for exit terminates the process). So the jns target is .open_ok which comes after the exit code.
+
+Let me lay it all out:
+
+```
+; 0x100: Entry
+0x100: 48 8B 54 18        ; mov rsi, [rsp+24]           (5)
+0x105: 48 89 D1           ; mov rdi, rsi               (3)
+0x108: 48 31 C9           ; xor rsi, rsi               (3)
+0x10B: 48 C7 C0 02 00 00 00  ; mov rax, 2              (7)
+0x112: 0F 05              ; syscall                   (2)
+0x114: 48 85 C0           ; test rax, rax              (3)
+0x117: 0F 87 11 00 00 00  ; jns rel32=0x11 -> 0x11D+0x11=0x12E  (7)
+0x11E: 48 C7 C0 3C 00 00 00  ; mov rax, 60             (7)
+0x125: 48 C7 C7 01 00 00 00  ; mov rdi, 1              (7)
+0x12C: 0F 05              ; syscall                   (2)
+; 0x12E: .open_ok
+0x12E: 48 89 D8           ; mov rax, rsi? no...
+```
+
+Wait, at .open_ok, rax = fd (from open syscall). I need to use it.
+
+0x12E: mov rsi, rax  ; save fd in rsi
+- 48 89 C8 (mov rsi, rax)? Let me check:
+  - REX.W (48) + 89 (mov r/m, r)
+  - mod=11, reg=rax(000), r/m=rsi(011)
+  - ModRM = 0b11 000 011 = 0b11000011 = 0xC3
+  - So: 48 89 C8
+
+Actually wait. I can just keep the fd in rax for now. Let me think about what I need:
+
+For read: rax=0, rdi=fd, rsi=buf, rdx=size
+So I need fd in rdi. If fd is in rax, I do:
+- mov rdi, rax (48 89 C7)
+  - REX.W(48) + 89 (mov r/m, r)
+  - mod=11, reg=rax(000), r/m=rdi(001)
+  - ModRM = 0b11 000 001 = 0b11000001 = 0xC1
+  - So: 48 89 C1
+
+Then:
+- mov rsi, 0x2000: B8 00 20 00 00? No, that's mov eax, imm32.
+  Actually: mov rsi, 0x2000:
+  - 48 C7 E8 00 20 00 00 (mov rsi, imm32) - 7 bytes
+  - Or: BE 00 20 00 00 (mov esi, imm32) + sign extension? No, that only sets 32 bits.
+  - Better: 48 C7 E8 00 20 00 00 (7 bytes)
+
+- mov rdx, 0x100000:
+  - 48 C7 D8 00 00 10 00 (mov rdx, imm32) - 7 bytes
+
+- xor rax, rax: 31 C0 (2 bytes)
+
+- syscall: 0F 05 (2 bytes)
+
+OK this is getting long but I'll just write it all out.
+
+Let me be very systematic now. I'll write each instruction, its hex bytes, and track the offset.
+
+**Code section:**
+
+```
+OFF  Instruction                          Bytes
+----- --------------------------------- -------------------
+100   mov rsi, [rsp+24]                   48 8B 54 18
+105   mov rdi, rsi                        48 89 D1
+108   xor rsi, rsi                        48 31 C9
+10B   mov rax, 2                          48 C7 C0 02 00 00 00
+112   syscall                             0F 05
+114   test rax, rax                       48 85 C0
+117   jns 12E                             0F 87 11 00 00 00
+11E   mov rax, 60                         48 C7 C0 3C 00 00 00
+125   mov rdi, 1                          48 C7 C7 01 00 00 00
+12C   syscall                             0F 05
+12E   .open_ok: mov rdi, rax              48 89 C1
+131   mov rsi, 0x2000                     48 C7 E8 00 20 00 00
+138   mov rdx, 0x100000                   48 C7 D8 00 00 10 00
+13F   xor rax, rax                        31 C0
+141   syscall                             0F 05
+143   test rax, rax                       48 85 C0
+146   jns 152                             0F 87 03 00 00 00
+14D   mov rax, 60                         48 C7 C0 3C 00 00 00
+154   mov rdi, 1                          48 C7 C7 01 00 00 00
+15B   syscall                             0F 05
+15D   .read_ok: mov rcx, rax              48 89 C1
+```
+
+Wait, at .read_ok, rax = bytes read. I want rcx = bytes read.
+mov rcx, rax:
+- REX.W(48) + 89 (mov r/m, r)
+- mod=11, reg=rax(000), r/m=rcx(010)
+- ModRM = 0b11 000 010 = 0b11000010 = 0xC2
+- So: 48 89 C2
+
+Let me fix:
+```
+15D   .read_ok: mov rcx, rax              48 89 C2
+160   xor rdx, rdx                        31 D2
+163   mov rsi, 0x2000                     48 C7 E8 00 20 00 00
+16A   .count_loop: test rcx, rcx           48 85 C1
+16D   je 188                              74 1B
+16F   movzx eax, byte [rsi]               8B 05 00 00 00 00  -- no!
+```
+
+Hmm, `movzx eax, byte [rsi]`:
+- 64-bit: REX.W(48) + 8B (mov r64, m64) -> no that moves 64 bits
+- 32-bit: 48 0F B5 00 (REX.W, 0F B5, modrm=00) -- wait
+
+Actually: `movzx eax, byte [rsi]`:
+- This is `movzx r32, m8`
+- Opcode: 48 0F B5 (REX.W, 0F, B5)
+- ModRM: mod=11, reg=000 (eax), r/m=011 (rsi)
+- ModRM = 0b11 000 011 = 0xC3
+- So: 48 0F B5 C3
+
+Wait, but if REX.W is set, movzx r32,m8 still works? In 64-bit mode, `movzx r32, m8` with REX.W... 
+
+Actually, in 64-bit mode:
+- `movzx r/m32, r8` = 48 0F B6 (REX.W) or 0F B6 (no REX)
+- `movzx r/m32, m8` = 48 0F B5 (REX.W) or 0F B5 (no REX)
+
+Wait, I'm confusing the mnemonics. Let me look at the opcodes:
+
+- 0F B5 /r: movzx r/m32, r8  (dest is r/m, src is r8)
+- 0F B7 /r: movzx r/m64, r8
+- 48 0F B7 /r: movzx r/m64, r8 (REX.W makes r/m 64-bit)
+- 48 0F B5 /r: movzx r/m32, r8 (REX.W) -- hmm, actually REX.W changes r/m to 64-bit
+
+Wait, I think I have the direction wrong. Let me reconsider:
+
+`movzx eax, byte [rsi]` means: eax = 32-bit zero-extended version of byte at [rsi].
+Source: byte [rsi] (m8)
+Destination: eax (r32)
+
+The instruction format for movzx r32, m8:
+- Opcode: 48 0F B5 (REX.W + 0F B5)
+- ModRM: reg = src = r8? No...
+
+I'm getting confused. Let me think differently.
+
+The AT&T syntax `movzx eax, byte [rsi]` is Intel: `movzx eax, BYTE PTR [rsi]`
+
+Intel: movzx dest, src
+- dest = r32/r64 (eax or rax)
+- src = m8 (byte memory)
+
+Opcode for movzx r/r64, m8:
+- 0F B5 (for 32-bit dest without REX.W)
+- 48 0F B5 (for 64-bit dest with REX.W) -- but we want 32-bit dest
+
+Hmm, actually I don't need REX.W. If I want to move into eax (32-bit), I can use:
+- 48 0F B5 C3 -- but REX.W would make the dest 64-bit (rax)
+
+Wait, let me look at this more carefully:
+
+In x86-64:
+- 0F B5 /r: movzx r/m32, r8 -- this zeros the upper 32 bits of the r32 dest
+- 48 0F B5 /r: movzx r/m64, r8 -- this zeros the upper 48 bits of the r64 dest
+
+So for `movzx eax, byte [rsi]`, I want to use 0F B5 (without REX.W), and the dest is r/m=eax (000), src is... wait no, for movzx, the ModRM reg field is the source.
+
+Ugh, I keep getting this wrong. Let me look at it from the encoding table:
+
+**MOVZX r32/r64, m8:**
+- Opcode: 48 0F B5 /r (for 64-bit r/m, REX.B not needed for rsi)
+  - Actually: 0F B5 /r where /r specifies the source register in modrm reg field
+  - Wait no, for movzx dest,src, the /r is the source
+
+Let me try a different approach. Instead of movzx, I can just use `mov al, [rsi]`:
+
+`mov al, [rsi]`:
+- Opcode: 8A 04 (mov r8, r/m8)
+- ModRM: mod=01, reg=000 (al), r/m=011 (rsi)
+- ModRM = 0b01 000 011 = 0b01000011 = 0x43
+- disp8 = 0x00 (since rsi has no offset, mod=01 requires disp8)
+- So: 8A 43 00
+
+Wait, for r/m = rsi (011), mod=00 means [rsi] (no disp). But mod=00 with r/m=011... in 64-bit mode:
+- mod=00, r/m=100: [RSP]
+- mod=00, r/m=111: [RIP+disp32]
+- mod=00, r/m=other: [register] (no disp)
+
+So mod=00, r/m=011 (rsi): [rsi] with no displacement.
+
+So: 8A 03 (mod=00, reg=000(al), r/m=011(rsi)), then no displacement.
+Wait: ModRM = mod(00) reg(000) r/m(011) = 0b00000011 = 0x03
+So: 8A 03
+
+Then I compare al:
+`cmp al, 10`:
+- Opcode: 80 38 0A (cmp m8, imm8)
+- Or: 3C 0A (cmp al, imm8)
+- 3C is cmp al, imm8. Yes!
+
+So:
+```
+16F   mov al, [rsi]           8A 03       (2)
+171   cmp al, 10              3C 0A       (2)
+173   je 176                  74 03       (2)  -- jump to 0x176
+175   inc rsi                 40 06 ... no
+```
+
+Hmm wait, `inc rsi` in 64-bit:
+- 40 06 is `inc r6` (REX.R, 06) - no that's not right.
+- `inc rsi`: 
+  - Without REX: FF 07 (inc [rsi]) -- that's inc memory!
+  - To inc rsi (register): 40 06? Let me check.
+  
+  Actually: FF /0 is inc r/m16 or inc r/m32 or inc r/m64 (depending on operand size).
+  But for register: FF /r is inc r/m, but it operates on memory!
+  
+  Wait no: FF /0 is `inc r/m16` or `inc r/m32` or `inc r/m64`. It increments the operand at [r/m]. If r/m is a register, it increments the register.
+  
+  For `inc rsi`:
+  - Opcode: FF (with REX for 64-bit)
+  - ModRM: mod=11, r/m=011 (rsi), reg=000
+  - ModRM = 0b11 000 011 = 0xC3
+  - With REX for 64-bit: 40 0F? No...
+  
+  Actually, for 64-bit `inc rsi`:
+  - The base opcode for inc r/m is FF /r
+  - mod=11, r/m=rsi(011), reg=000
+  - ModRM = 0b11000011 = 0xC3
+  - 64-bit operand: REX.R not needed (rsi is in base 8), but REX.W? 
+  - FF /r already gives 64-bit for REX.W
+  - So: 40 06 is... wait, 40 is REX.R, that would be RDI.
+  
+  For `inc rsi`:
+  - REX prefix: 00 00 00 (no REX.W, no REX.R, no REX.X, no REX.B)
+  - But we need 64-bit operand. FF /0 gives 64-bit in 64-bit mode when REX.W is set.
+  - REX.W = 40? No, REX.W is the 3rd bit (0x40).
+  - 40 = REX.W? Let me check:
+    - REX byte: 0100 XXXX where bit 3 (0x40) is W
+    - 40 = 01000000 -> W=1, R=0, X=0, B=0
+    - So 40 is REX.W
+  - So `inc rsi` in 64-bit = 40 06? Wait, 0x40 | 0x06? No.
+  
+  Hmm, I think I'm confusing the opcodes. Let me recall:
+  
+  `inc rsi` (64-bit):
+  - If REX.W is set: FF 07 is `inc [rsi]` (memory), not register.
+  - For register inc: the ModRM with mod=11 selects a register.
+  
+  Actually, I recall that in 64-bit mode:
+  - `inc rsi` = 40 06 -- wait that's REX.R(40) + 06
+  - 06 is the opcode for `inc r/m6` (RAX, RBX, RBP, RSP, RDI, RSI, RDX, RCX?)
+  
+  Actually the opcode 0x06 is not standard for inc. Let me recall the inc opcodes:
+  
+  `inc r8/r16/r32/r64`:
+  - 64-bit with REX.W: FF /0 with REX.W
+  - 32-bit: FF /0 (without REX.W)
+  
+  So `inc rsi` = 48 07 C3? Let me check:
+  - 48 = REX.W
+  - 07 = FF with... no, 07 is not FF.
+  
+  Oh wait, I think I'm overcomplicating this. Let me just recall:
+  - `inc eax` = 40 05
+  - `inc ebx` = 48 83 C3 1? No...
+  
+  Actually, the simple form:
+  - inc rsi: In 64-bit, I can use:
+    - 40 06 (REX.W + 06)? But 06 isn't a standard opcode...
+    
+  You know what, let me just use the long form:
+  - `add rsi, 1`: 48 83 C6 01 (REX.W + 83, modrm=C6, imm=01)
+  
+  Actually, `inc rsi` can be encoded as:
+  - `48 83 C6 01`? Let me verify:
+    - 48 = REX.W
+    - 83 = ADD imm8 to r/m? No, 83 is `ADD imm8` or `SUB imm8` etc.
+    - 83 C6 01: 83 is "ADD r/m8, imm8" or "SUB r/m8, imm8" etc depending on opcode bits
+    - Actually 83 /0 is ADD r/m, imm8
+    - C6 = modrm: mod=11, reg=010, r/m=011
+      - reg=010 = SUB? No, the reg field for 83 encodes the ALU operation:
+      - 83 00-7F: 00=ADD, 01=OR, 02=AND, 03=SUB, 04=NOT...
+      - C6 = 11000110: op = 1100 (12) = ??? 
+  
+  I'm going in circles. Let me just use a different approach:
+  
+  `inc rsi`: use `40 06`? Let me check Intel's manual:
+  
+  Actually, I recall now:
+  - `inc rsi` in 64-bit mode: 
+    - `48 83 C6 01` is NOT correct (that's add imm8)
+    - The correct encoding is `FF 46 00`? No that's inc [rsi+0]
+  
+  OK here's what I'll do. I'll use `lea` or just add:
+  - `add rsi, 1`: `48 83 C6 01` 
+    - 48 = REX.W
+    - 83 = ALU opcode (with imm8)
+    - C6 = ModRM: mod=11, reg=010(ADD), r/m=011(rsi)
+    - 01 = imm8
+    - So: 48 83 C6 01 = add rsi, 1
+  
+  Wait, for 83 opcode:
+  - 83 /0 is ADD r/m, imm8
+  - The reg field (bits 5-3) encodes the operation
+  - 83 C6: C6 = 0x C6 = 1100 0110
+    - op (bits 7-6) = 11 (not standard for 83)
+  
+  Hmm, I think 83 is not a single-byte opcode with variable op. Let me recall:
+  
+  Actually, the 83 opcode is:
+  - 80: ADD r/m8, imm8
+  - 81: ADD r/m16/r32/r64, imm32
+  - 83: ADD r/m8, imm8 (but I think 83 is "ADD r/m, imm8" specifically)
+  
+  And the ModRM for 83:
+  - bits 7-4: op (ALU operation)
+  - bits 3-0: ??? 
+  - Actually no, for 83:
+    - ModRM: mod(2) reg(3) r/m(3)
+    - The "reg" field encodes the ALU op:
+      - 000 = ADD
+      - 001 = OR
+      - 002 = AND
+      - 003 = SUB
+      - 010 = XOR
+      - 011 = NOT
+      - 100 = INC
+      - 101 = DEC
+      - 110 = SHL
+      - 111 = SAR
+  
+  So for `add rsi, 1`:
+  - 83 + ModRM(000, 011, 011) + 01
+  - ModRM = 0b00 000 011 = 0x03? Wait mod=11 for register:
+  - ModRM = mod(11) | reg(000) | r/m(011) = 11 000 011 = 0xC3
+  - So: 48 83 C3 01? 
+  
+  Wait, mod=11, r/m=011 means rsi. That's correct for `add rsi, 1`.
+  ModRM = 0b11000011 = 0xC3
+  So: 48 83 C3 01 = add rsi, 1 (64-bit)
+  
+  Hmm but 0xC3 for modrm:
+  - mod = 11 (bits 7-6)
+  - reg = 000 (bits 5-3) = ADD
+  - r/m = 011 (bits 2-0) = rsi
+  
+  Yes! So `add rsi, 1` = 48 83 C3 01
+
+  And `add rcx, -1` or `dec rcx`:
+  - 48 83 D1 FF? (dec r/m): 83 D1 FF
+    - D1: mod=11, reg=111(DEC), r/m=001(rcx)
+    - FF = -1
+    - So: 48 83 D1 FF = dec rcx
+  
+  Or I can use `sub rcx, 1`:
+    - 48 83 D1 01 (sub rcx, 1): D1 = 11 011 001: mod=11, reg=011(SUB), r/m=001(rcx)
+  
+  Let me use `dec` for clarity.
+
+OK let me now be very careful and write the complete code:
+
+```
+; Count newlines in buffer at 0x2000, length in rcx
+; rsi = buffer pointer, rcx = bytes remaining, rdx = count
+
+.count_loop:
+  test rcx, rcx          ; 48 85 C1 (5) -- wait
+```
+
+Wait, `test rcx, rcx`:
+- 48 85 C1 (REX.W, 85, modrm=C1)
+- 85 = test r/m, r
+- ModRM: mod=11, reg=000, r/m=010
+- = 11 000 010 = 11000010 = 0xC2
+
+So test rcx, rcx = 48 85 C2. Let me verify:
+- 48 = REX.W
+- 85 = test r/m32/r64, r32/r64
+- C1 = 11000001? No...
+  
+  C1 in binary: 1100 0001
+  mod=11, reg=000, r/m=001
+  
+  That would be test rax, rcx? No:
+  - For test r/m, r: r/m = dest, reg = source
+  - r/m = 001 = rax, reg = 000 = rax
+  - So test rax, rax (not rcx!)
+
+For test rcx, rcx:
+- r/m = 010 = rcx, reg = 010 = rcx
+- ModRM = 11 010 010 = 11010010 = 0xD2
+- So: 48 85 D2
+
+Let me redo. For `test rcx, rcx`:
+- Opcode: 85 (test r/m, r)
+- REX.W: 48
+- ModRM: mod=11, reg=010 (rcx), r/m=010 (rcx)
+- = 0b11 010 010 = 0xD2
+- So: 48 85 D2
+
+For `test rax, rax`:
+- ModRM: mod=11, reg=000 (rax), r/m=000 (rax)
+- = 0b11 000 000 = 0xC0
+- So: 48 85 C0 ✓
+
+OK let me now write the FULL complete code with correct encodings:
+
+```
+; ============================================================
+; ENTRY 0x100
+; ============================================================
+
+; --- Load filename ---
+0x100: 48 8B 54 18      ; mov rsi, [rsp+24]           (5)
+
+; --- sys_open ---
+0x105: 48 89 D1         ; mov rdi, rsi                (3)  ; rdi = path
+0x108: 48 31 C9         ; xor rsi, rsi                (3)  ; rsi = 0 (O_RDONLY)
+0x10B: 48 C7 C0 02 00 00 00  ; mov rax, 2          (7)  ; sys_open
+0x112: 0F 05            ; syscall                   (2)
+0x114: 48 85 C0         ; test rax, rax               (3)
+0x117: 0F 87 11 00 00 00  ; jns 0x11D+0x11=0x12E   (7)
+
+; --- exit(1) on open failure ---
+0x11E: 48 C7 C0 3C 00 00 00  ; mov rax, 60         (7)
+0x125: 48 C7 C7 01 00 00 00  ; mov rdi, 1          (7)
+0x12C: 0F 05            ; syscall                   (2)
+
+; ============================================================
+; .open_ok: 0x12E
+; rax = fd
+; ============================================================
+
+; --- sys_read ---
+0x12E: 48 89 C1         ; mov rdi, rax                (3)  ; rdi = fd
+0x131: 48 C7 E8 00 20 00 00  ; mov rsi, 0x2000     (7)  ; rsi = buf
+0x138: 48 C7 D8 00 00 10 00  ; mov rdx, 0x100000    (7)  ; rdx = 1MB
+0x13F: 31 C0            ; xor rax, rax                (2)  ; rax = 0 (sys_read)
+0x141: 0F 05            ; syscall                   (2)
+0x143: 48 85 C0         ; test rax, rax               (3)
+0x146: 0F 87 03 00 00 00  ; jns 0x14D+0x03=0x150   (7)
+
+; --- exit(1) on read failure (shouldn't happen for regular file) ---
+0x14D: 48 C7 C0 3C 00 00 00  ; mov rax, 60         (7)
+0x154: 48 C7 C7 01 00 00 00  ; mov rdi, 1          (7)
+0x15B: 0F 05            ; syscall                   (2)
+
+; ============================================================
+; .read_ok: 0x15D
+; rax = bytes read
+; ============================================================
+
+0x15D: 48 89 C2         ; mov rcx, rax                (3)  ; rcx = bytes remaining
+0x160: 31 D2            ; xor rdx, rdx                (2)  ; rdx = 0 (newline count)
+0x163: 48 C7 E8 00 20 00 00  ; mov rsi, 0x2000     (7)  ; rsi = buffer start
+
+; --- Count newlines loop ---
+.count_loop:
+0x16A: 48 85 D2         ; test rcx, rcx               (3)
+0x16D: 74 1B            ; je 0x16D+2+0x1B=0x188      (2)
+0x16F: 8A 03            ; mov al, [rsi]               (2)
+0x171: 3C 0A            ; cmp al, 10                  (2)
+0x173: 74 03            ; je 0x173+2+0x03=0x178      (2)
+0x175: 48 83 C3 01      ; add rsi, 1                  (4)
+0x179: 48 83 D1 FF      ; dec rcx                     (4)  -- wait
+```
+
+Hmm, `dec rcx`:
+- 83 /D is DEC r/m
+- 48 83 D1 FF: 
+  - 48 = REX.W
+  - 83 = ALU + imm8
+  - D1 = modrm: 11 011 001: mod=11, reg=011(SUB? no DEC?), r/m=001(rcx)
+  
+  For 83 opcode, the ALU op is in bits 7-6 of the... wait, for 83:
+  - The op is in bits 7-6 of the... actually I think for 83, it's:
+    - 83 /0 = ADD r/m, imm8 (op=00)
+    - 83 /3 = SUB r/m, imm8 (op=01)
+    - 83 /4 = NOT r/m
+    - 83 /C = INC r/m (op=11)
+    - 83 /D = DEC r/m (op=13)
+  
+  So for DEC: op=13 (1101), reg field = 13?
+  
+  Let me think about this differently. The 83 opcode:
+  - 83 + ModRM + imm8
+  - The ModRM byte contains: mod(2) reg(3) r/m(3)
+  - For 83, the "reg" field encodes the ALU operation:
+    - 000 = ADD
+    - 001 = OR  
+    - 002 = AND
+    - 003 = SUB
+    - 004 = NOT
+    - 005 = XOR
+    - 006 = XOR (same as 005?)
+    - 007 = NEG
+    - 010 = INC
+    - 011 = DEC
+    - 012 = ROL
+    - 013 = ROR
+    - 014 = RLC
+    - 015 = RRC
+    - 100 = SAR
+    - 101 = SHL
+    - 110 = SHR
+    - 111 = ???
+  
+  Hmm, I don't think I have this right. Let me just use `sub rcx, 1` which I know works:
+  
+  `sub rcx, 1`:
+  - 83 with op=003 (SUB): reg=003
+  - r/m=010 (rcx): 
+  - ModRM = 11 003 010 = 11000010 = 0xC2
+  - So: 48 83 C2 01 = sub rcx, 1
+  
+  Let me verify: 48 83 C2 01
+  - 48: REX.W
+  - 83: SUB r/m, imm8 (op=003 in reg field)
+  - C2: 11 003 010: mod=11, reg=011... 
+  
+  Wait: C2 = 1100 0010
+  - mod = 11 (bits 7-6)
+  - reg = 000 (bits 5-3) -- that's ADD, not SUB!
+  - r/m = 010 (bits 2-0) = rcx
+  
+  So 48 83 C2 01 is `add rcx, 1`, not sub!
+  
+  For `sub rcx, 1`:
+  - reg = 003 (SUB)
+  - ModRM = 11 003 010 = 0xC2? No:
+    - 11 = 11 (mod)
+    - 003 = 3 (reg)
+    - 010 = 2 (r/m)
+    - = 11 011 010 = 11011010 = 0xDA
+  - So: 48 83 DA 01 = sub rcx, 1
+
+  Let me verify: DA = 1101 1010
+  - mod = 11
+  - reg = 110? No: bits 5-3 = 110 = 6? That's not SUB (3).
+  
+  I'm making errors. Let me be super careful:
+  
+  ModRM byte = (mod << 6) | (reg << 3) | r/m
+  
+  For sub rcx, 1:
+  - mod = 11 (2)
+  - reg = 3 (SUB)  
+  - r/m = 2 (rcx)
+  - Byte = (2 << 6) | (3 << 3) | 2 = 128 | 24 | 2 = 154 = 0x9A
+  
+  So: 48 83 9A 01 = sub rcx, 1
+
+  Let me double-check: 0x9A = 1001 1010
+  - mod = 10?? That's 8-bit displacement mode!
+  
+  Ugh. (2 << 6) = 128 = 0x80. 0x80 | 0x18 | 0x02 = 0x9A.
+  0x9A = 1001 1010:
+  - bits 7-6: 10 = mod 2?? 
+  
+  Wait, mod field is 2 bits: 11 for direct register.
+  (2 << 6) = 128. In binary: 1000 0000. The top 2 bits are 10, which is mod=2 (8-bit displacement), not mod=3 (11).
+  
+  Ah I see my error. mod=3, not mod=2.
+  mod=3 (binary 11), not 2.
+  
+  So: (3 << 6) | (3 << 3) | 2 = 192 | 24 | 2 = 218 = 0xDA
+  
+  0xDA = 1101 1010:
+  - bits 7-6: 11 = mod=3 ✓
+  - bits 5-3: 110 = reg=6? 
+  
+  No! bits 5-3 of 0xDA:
+  0xDA = 1101 1010
+  Bit 5 = 0 (position 5 from right: 11011010, positions: 76543210)
+  Bit 5 = 0
+  Bit 4 = 1
+  Bit 3 = 1
+  So reg = 011 = 3 ✓
+  r/m = 010 = 2 ✓
+  
+  So: 48 83 DA 01 = sub rcx, 1 ✓
+  
+  OK great. Now let me continue:
+
+0x16D: 74 1B            ; je 0x188                  (2)
+0x16F: 8A 03            ; mov al, [rsi]             (2)
+0x171: 3C 0A            ; cmp al, 10                (2)
+0x173: 74 03            ; je 0x178                  (2)
+0x175: 48 83 C3 01      ; add rsi, 1                (4)
+0x179: 48 83 DA 01      ; sub rcx, 1                (4)
+0x17D: EB F4            ; jmp 0x17D-5+0xF4=0x17D? 
+```
+
+Wait, `jmp .count_loop`:
+- .count_loop is at 0x16A
+- Current position after jmp: 0x17F (after 48 83 DA 01 at 0x179, next is at 0x17D)
+- jmp short: EB rel8
+- rel8 = 0x16A - 0x17F = -0x15 = 0xF3 (two's complement)
+- So: EB F3
+
+Let me recount offsets:
+
+```
+0x100: 48 8B 54 18     (5) -> next: 0x105
+0x105: 48 89 D1        (3) -> next: 0x108
+0x108: 48 31 C9        (3) -> next: 0x10B
+0x10B: 48 C7 C0 02 00 00 00 (7) -> next: 0x112
+0x112: 0F 05           (2) -> next: 0x114
+0x114: 48 85 C0        (3) -> next: 0x117
+0x117: 0F 87 11 00 00 00 (7) -> next: 0x11E
+0x11E: 48 C7 C0 3C 00 00 00 (7) -> next: 0x125
+0x125: 48 C7 C7 01 00 00 00 (7) -> next: 0x12C
+0x12C: 0F 05           (2) -> next: 0x12E
+; .open_ok at 0x12E
+0x12E: 48 89 C1        (3) -> next: 0x131
+0x131: 48 C7 E8 00 20 00 00 (7) -> next: 0x138
+0x138: 48 C7 D8 00 00 10 00 (7) -> next: 0x13F
+0x13F: 31 C0           (2) -> next: 0x141
+0x141: 0F 05           (2) -> next: 0x143
+0x143: 48 85 C0        (3) -> next: 0x146
+0x146: 0F 87 03 00 00 00 (7) -> next

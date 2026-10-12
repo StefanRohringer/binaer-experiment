@@ -1,0 +1,9 @@
+BEGIN_C
+#include <stdio.h>
+
+int main(void) {
+    int result = 12345 * 6789;
+    printf("%d\n", result);
+    return 0;
+}
+END_C

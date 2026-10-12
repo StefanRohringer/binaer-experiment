@@ -1,0 +1,48 @@
+I'm designing a C interpreter for this small language, parsing lines into assignments, print statements, and function definitions, with an expression parser that supports variables and function calls, storing function parameters and bodies for later evaluation with local bindings.
+
+Building out the recursive descent grammar now: primary expressions handle parentheses, numbers, and identifiers (checking if followed by '(' for function calls versus variable/param lookup), then layering multiplication/division/modulo, addition/subtraction, and comparison operators on top using standard precedence climbing with skipws calls between tokens.
+
+For comparisons, since the language doesn't chain them, I'll still parse left-to-right but only expect one comparison at most — checking two-character operators like <=, >=, ==, != before falling back to single-char < and >.
+
+Now working through the ternary operator's right-associative structure: cond ? a : b, where the branches need careful handling of precedence so nested ternaries resolve correctly.
+
+The tricky part is that only the chosen branch should actually be evaluated, so I need a way to parse the unchosen branch structurally without computing it — otherwise I'd risk things like division by zero in a branch that should never run. I'm thinking of adding an "evaluate" flag that lets the parser walk through syntax without performing the actual computation when it's not needed.
+
+So I'm threading an `ev` flag through every parsing function: numbers return 0 when not evaluating, division only happens when `ev` is true, and function calls only recurse into evaluation when `ev` is set. For the function call case itself, I'm setting up logic to look up the function by name, build a new environment binding parameter names to evaluated argument values, then evaluate the function body using that environment.
+
+Variable lookup checks the local environment first then globals when evaluating, otherwise just returns 0, and numbers parse as 64-bit integers via strtoll with identifiers limited to short lowercase names. Now I'm moving to statement-level parsing: skipping blank lines, detecting the "print" keyword to evaluate and output an expression, and detecting "def" to begin parsing a function definition.
+
+For anything else, I read the first identifier as a variable name and expect a single '=' sign before parsing the assigned expression, since at statement level '=' always means assignment rather than comparison. For "def", I parse the function name, expect an opening parenthesis, and begin reading comma-separated parameter names.
+
+Once parameters are done and I see the closing parenthesis and '=', I'll store the remainder of the line as the function body text so it can be re-parsed later at call time, copying it into its own buffer. I'm planning to read all of stdin into one big buffer and process it line by line, likely using fgets in a loop with a fixed-size buffer, storing each function's body string for later evaluation.
+
+I'm writing helper functions for whitespace skipping and identifier reading, keeping names capped at a small max length while handling keyword cases like "print".
+
+Now I'm setting up global tables for variables and functions, with a small Env struct to hold local function parameters for call frames. Defining structures...
+
+Adding parenthesized expressions, number and variable parsing, then starting function call argument handling...
+
+Now I'm wrapping up function call evaluation with variable lookup fallback for plain identifiers, checking environment bindings first then global variables. Then I'm moving into parsing multiplication, division, and modulo operators at the next precedence level above primary expressions.
+
+Next I'm building the addition/subtraction parser similarly, then starting on comparison operator parsing.
+
+Finishing comparison operator logic...
+
+For the ternary parser, I'm evaluating the condition then conditionally evaluating only the active branch using the `ev` flag, so side-effect-free short-circuiting works correctly -- only the taken branch (then or else) actually evaluates, while the other is parsed but suppressed. I need to double check that parsing the then-branch correctly stops at the colon rather than consuming it as part of a nested ternary.
+
+Checking right-associativity with `a ? b : c ? d : e`, tracing through confirms it correctly parses as a?b:(c?d:e), matching expected precedence. Now I'm thinking through how to evaluate the branches, passing the then/else evaluators recursively for nested ternary handling.
+
+Moving to the main program loop, I'm writing code to read lines from input, skip whitespace, and extract the first keyword to dispatch print/def/other statements.
+
+Parsing the parameter list after the function name, storing up to four parameter names, then advancing past the closing parenthesis before continuing.
+
+Still writing parser...
+
+Checking that recursive function definitions work since the function is registered in the name table before its body parses, allowing self-calls to resolve correctly. I'm also double-checking buffer sizes for variable and function names stay within the stated limits.
+
+Now writing the comparison parser, handling each operator (<=, >=, ==, and the rest) by parsing the right-hand operand and only applying the comparison when evaluation mode is active...
+
+I'm also noting that overflow could occur while parsing numbers in a non-evaluated branch, but since the problem guarantees intermediate results fit, that shouldn't matter in practice.
+
+Recursion depth around 200 with nested parse calls should stay well within default stack limits, so that's not a concern. I also want to double-check edge cases like reading the first word of a statement or distinguishing `=` from `==` in assignment parsing, but these seem handled correctly, so I'm ready to finalize.
+

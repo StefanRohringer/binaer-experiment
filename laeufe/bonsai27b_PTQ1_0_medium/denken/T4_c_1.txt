@@ -1,0 +1,80 @@
+The user wants a complete C program for Linux that:
+1. Reads a line from stdin (at most 200 bytes, ending with a newline)
+2. Outputs the content in reverse (without the newline)
+3. Followed by a newline
+4. Exit code 0
+
+It's compiled with "gcc -O2" and can use the normal C standard library.
+
+Let me write a simple C program:
+
+```c
+#include <stdio.h>
+
+int main(void) {
+    char buf[200];
+    if (fgets(buf, sizeof(buf), stdin)) {
+        int len = (int)buf[200 - 1]; // no, I need to find the length properly
+        // Remove the newline
+        // Find the length
+        int len = 0;
+        while (buf[len] && buf[len] != '\n') len++;
+        // Output in reverse
+        for (int i = len - 1; i >= 0; i--) {
+            putchar(buf[i]);
+        }
+        putchar('\n');
+    }
+    return 0;
+}
+```
+
+Wait, let me think about edge cases. The line is at most 200 bytes ending with a newline. So the content is at most 199 characters plus the newline, making 200 bytes total. So a buffer of size 200 should work with fgets.
+
+Actually, "höchstens 200 Byte" - does this include the newline or not? Let me re-read: "Lies eine Zeile (höchstens 200 Byte, endet mit Zeilenumbruch)". I think the line is at most 200 bytes total (including the newline). So the content is at most 199 characters.
+
+With `fgets(buf, 200, stdin)`, we read up to 199 characters plus the null terminator. If the line is exactly 200 bytes (199 chars + newline), fgets will read 199 characters (the newline is one of them) and add '\0', so it fits in a 200-byte buffer. Wait, fgets reads at most `n-1` characters. So `fgets(buf, 200, stdin)` reads at most 199 characters. If the line is 199 chars + newline = 200 bytes, then fgets reads all 200 bytes... no wait, it reads at most 199 characters.
+
+Hmm, let me reconsider. `fgets(char *str, int size, FILE *stream)` reads up to `size-1` characters. So `fgets(buf, 200, stdin)` reads up to 199 characters into buf, then adds '\0'.
+
+If the input line is exactly 200 bytes (199 content chars + 1 newline), then fgets with size 200 would read 199 characters. That's 198 content chars + 1 newline. It would stop, leaving 1 content char in stdin. That's a problem.
+
+But wait, re-reading the problem: "höchstens 200 Byte" - maybe the line content is at most 200 bytes, and then there's the newline. So the total input could be 201 bytes. Let me use a buffer of size 201 to be safe.
+
+Actually, let me just use a buffer of size 201 to be safe. `fgets(buf, 201, stdin)` reads up to 200 characters. That covers 200 content chars + 1 newline = 201 bytes... no, it reads up to 200 characters. If the line is 200 chars + newline = 201 bytes, fgets reads 200 chars (200 content chars, no newline) and leaves the newline in stdin.
+
+Hmm, this is getting complicated. Let me just use a buffer large enough. The problem says "höchstens 200 Byte" for the line. I'll interpret this as the entire line (including newline) is at most 200 bytes. So I need a buffer of at least 201 bytes (to hold 200 chars + null terminator).
+
+Let me use `char buf[201]` and `fgets(buf, 201, stdin)`. This reads up to 200 characters. If the line is at most 200 bytes including the newline, this covers it perfectly.
+
+Let me write the final program:
+
+```c
+#include <stdio.h>
+
+int main(void) {
+    char buf[201];
+    if (fgets(buf, 201, stdin)) {
+        int i = 0;
+        while (buf[i] && buf[i] != '\n') i++;
+        for (int j = i - 1; j >= 0; j--) {
+            putchar(buf[j]);
+        }
+        putchar('\n');
+    }
+    return 0;
+}
+```
+
+This should work. Let me verify:
+- Reads up to 200 chars into buf (fgets with size 201)
+- Finds the length (stops at '\n' or '\0')
+- Prints characters from end to beginning
+- Prints a newline
+- Returns 0
+
+The `for` loop: `j` is `int`, starts at `i-1`, goes down to 0. If `i` is 0 (empty line, just newline), then `j` starts at -1 and the loop doesn't execute. Then we just print '\n'. That's correct for an empty line.
+
+I need to make sure the `for` loop variable doesn't go negative when `i == 0`. `i-1` would be -1, and `j >= 0` would be false immediately. So the loop body never executes. Good.
+
+This looks correct and simple.

@@ -1,0 +1,69 @@
+The user wants a complete C program for Linux that:
+1. Reads a line (at most 200 bytes, ends with newline) from stdin
+2. Outputs the content in reverse (without the newline), followed by a newline
+3. Exit code 0
+
+Let me write this:
+
+- Read up to 200 bytes from stdin (the line ends with newline)
+- Reverse the characters (excluding the newline)
+- Print reversed + newline
+- Return 0
+
+Let me write the C code:
+
+```c
+#include <stdio.h>
+
+int main(void) {
+    char buf[201];
+    int n = 0;
+    int c;
+    while ((c = getchar()) != EOF && c != '\n') {
+        if (n < 200) {
+            buf[n++] = (char)c;
+        }
+    }
+    // print in reverse
+    for (int i = n - 1; i >= 0; i--) {
+        putchar(buf[i]);
+    }
+    putchar('\n');
+    return 0;
+}
+```
+
+Wait, the line is "at most 200 bytes" including the newline? Let me re-read: "Lies eine Zeile (höchstens 200 Byte, endet mit Zeilenumbruch) von stdin". So the line is at most 200 bytes total, including the newline. So the content is at most 199 characters plus the newline. But to be safe, I'll allocate a buffer of 200 for content and handle the newline separately.
+
+Actually, let me re-read: "höchstens 200 Byte, endet mit Zeilenumbruch" - the line is at most 200 bytes and ends with a newline. So the buffer needs to hold up to 199 characters + newline. But to be safe, I'll just read up to 200 characters of content (excluding the newline), and use a buffer of size 201 to be safe.
+
+Let me simplify: read characters until newline or EOF, store up to 199 characters (since the line is at most 200 bytes including newline). Actually, to be safe and simple, I'll just allocate 201 bytes and read until newline.
+
+Let me just use fgets which reads up to 200 characters:
+
+```c
+#include <stdio.h>
+#include <string.h>
+
+int main(void) {
+    char buf[201];
+    if (!fgets(buf, sizeof(buf), stdin)) {
+        return 0;
+    }
+    size_t len = strlen(buf);
+    if (len > 0 && buf[len-1] == '\n') {
+        len--;
+    }
+    for (size_t i = len; i > 0; i--) {
+        putchar(buf[i-1]);
+    }
+    putchar('\n');
+    return 0;
+}
+```
+
+This is clean. fgets reads up to 200 characters (sizeof(buf) - 1 = 200 chars). The line is at most 200 bytes including newline, so 200 chars in fgets is more than enough (it'll read 199 content chars + 1 newline max, or 200 content chars if no newline which shouldn't happen per spec).
+
+Wait, "höchstens 200 Byte" means the entire line (including newline) is at most 200 bytes. So content is at most 199 chars. fgets with buffer size 201 will read at most 200 chars. That's fine.
+
+Let me go with the fgets approach - it's cleaner.

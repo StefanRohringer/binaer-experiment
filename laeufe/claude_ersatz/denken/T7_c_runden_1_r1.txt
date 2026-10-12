@@ -1,0 +1,2 @@
+I'll write a simple recursive descent parser that reads input via fgets into a buffer, supports unary plus/minus for robustness, and uses long long arithmetic with C's truncating division, printing results with %lld.
+

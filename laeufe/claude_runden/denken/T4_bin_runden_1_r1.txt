@@ -1,0 +1,5 @@
+I'm designing a minim writable buffer in memory right after the headers so the entry point code can read a line and reverse it in place.
+
+Writing read syscall...
+
+al ELF64 binary layout with a single RWX program header, planning to place a

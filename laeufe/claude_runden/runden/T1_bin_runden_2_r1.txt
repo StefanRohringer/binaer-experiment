@@ -1,0 +1,6 @@
+Das Programm ist eine 164 Byte große ELF64-Datei. Sie besteht aus dem ELF-Header, einem einzigen Programm-Header, dem Code und dem Text.
+
+**Aufbau der Datei:**
+- **ELF-Header (64 Bytes):**
+  - Typ `ET_EXEC`, Architektur x86-64.
+  - Der

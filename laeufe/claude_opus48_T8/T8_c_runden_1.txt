@@ -1,0 +1,138 @@
+Hier ist meine Lösung.
+
+BEGIN_C
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <ctype.h>
+
+typedef long long ll;
+
+static char names[64][16];
+static ll values[64];
+static int nvars = 0;
+
+static int getvar(const char *n) {
+    for (int i = 0; i < nvars; i++)
+        if (strcmp(names[i], n) == 0) return i;
+    strcpy(names[nvars], n);
+    values[nvars] = 0;
+    return nvars++;
+}
+
+static const char *p; /* current parse pointer */
+
+static void skipws(void) {
+    while (*p == ' ' || *p == '\t') p++;
+}
+
+static ll parseExpr(void);
+
+/* factor: number, name, ( expr ), unary minus/plus */
+static ll parseFactor(void) {
+    skipws();
+    if (*p == '(') {
+        p++;
+        ll v = parseExpr();
+        skipws();
+        if (*p == ')') p++;
+        return v;
+    }
+    if (*p == '+') { p++; return parseFactor(); }
+    if (*p == '-') { p++; return -parseFactor(); }
+    if (isdigit((unsigned char)*p)) {
+        ll v = 0;
+        while (isdigit((unsigned char)*p)) {
+            v = v * 10 + (*p - '0');
+            p++;
+        }
+        return v;
+    }
+    if (*p >= 'a' && *p <= 'z') {
+        char buf[16];
+        int k = 0;
+        while (*p >= 'a' && *p <= 'z' && k < 15) {
+            buf[k++] = *p;
+            p++;
+        }
+        buf[k] = '\0';
+        int idx = getvar(buf);
+        return values[idx];
+    }
+    return 0;
+}
+
+/* term: factor (*|/|% factor)* */
+static ll parseTerm(void) {
+    ll v = parseFactor();
+    for (;;) {
+        skipws();
+        char op = *p;
+        if (op == '*' || op == '/' || op == '%') {
+            p++;
+            ll r = parseFactor();
+            if (op == '*') v = v * r;
+            else if (op == '/') v = v / r;
+            else v = v % r;
+        } else break;
+    }
+    return v;
+}
+
+/* expr: term (+|- term)* */
+static ll parseExpr(void) {
+    ll v = parseTerm();
+    for (;;) {
+        skipws();
+        char op = *p;
+        if (op == '+' || op == '-') {
+            p++;
+            ll r = parseTerm();
+            if (op == '+') v = v + r;
+            else v = v - r;
+        } else break;
+    }
+    return v;
+}
+
+int main(void) {
+    char line[256];
+    while (fgets(line, sizeof(line), stdin)) {
+        /* skip leading whitespace */
+        const char *s = line;
+        while (*s == ' ' || *s == '\t') s++;
+        /* empty line? */
+        if (*s == '\0' || *s == '\n' || *s == '\r') continue;
+
+        /* check for "print" */
+        if (strncmp(s, "print", 5) == 0 &&
+            !(s[5] >= 'a' && s[5] <= 'z')) {
+            p = s + 5;
+            ll v = parseExpr();
+            printf("%lld\n", v);
+            continue;
+        }
+
+        /* otherwise assignment: name = expr */
+        /* parse name */
+        char buf[16];
+        int k = 0;
+        const char *q = s;
+        while (*q >= 'a' && *q <= 'z' && k < 15) {
+            buf[k++] = *q;
+            q++;
+        }
+        buf[k] = '\0';
+        /* skip ws to '=' */
+        while (*q == ' ' || *q == '\t') q++;
+        if (*q == '=') {
+            q++;
+            p = q;
+            ll v = parseExpr();
+            int idx = getvar(buf);
+            values[idx] = v;
+        }
+    }
+    return 0;
+}
+END_C

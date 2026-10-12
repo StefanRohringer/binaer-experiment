@@ -1,0 +1,26 @@
+I'm tracing why the output is doubled, and I suspect the jump after EOF is landing at the wrong address—the jle instruction seems to target 0xa2 instead of the intended 0x9d where the null terminator is written, which could cause the loop to repeat incorrectly.
+
+But that skipped terminator probably doesn't matter since the input buffer sits in zero-initialized BSS memory anyway, so bytes past the input are already zero. Let me trace the actual read loop more carefully—following the jump offsets, the loop at 0x98 jumps back to 0x80, which is the start of the read loop, so after the first read it's looping back to read again.
+
+Now I realize the jump target skips the instruction that zeroes eax before the syscall, so rax still holds the previous read's return value (28) going into the next syscall, meaning the second iteration calls syscall number 28 instead of read—that's likely madvise, not a repeated read, which would explain the odd behavior I'm seeing.
+
+But wait, the doubled output means the whole program ran twice, not just a bad syscall. Let me trace what happens at the program's exit sequence to see how control could loop back to the start instead of actually terminating.
+
+But this gives only a single pass through the input, yet the output appeared doubled. So maybe my assumption about the read syscall is wrong—perhaps it's returning something other than the full byte count, which would change how the loop behaves.
+
+Counting the actual output lines against the four print statements in the input confirms there are exactly twice as many lines as expected, so the program is somehow running through the whole script twice. I need to figure out what in the loop logic would cause a second full pass rather than a partial read issue.
+
+I'm wondering if madvise could return a nonzero error that'd still satisfy the jle check, but that seems fine either way. Maybe the loop actually only reads once and the doubling happens elsewhere — perhaps during processing, not during the read itself. The buffer at 0x410000 sits in BSS beyond the file size, so that's zeroed and shouldn't overlap with anything causing duplication.
+
+Looking more carefully, when eax is 0 on the first pass it's a real read(0, 0x410000, 8192) call that returns 28 bytes. Then the code jumps forward and calls syscall 28, which is madvise rather than another read, so there's no second actual read happening — meaning the duplication must stem from something in how the single buffer gets processed twice, not from an extra read call.
+
+Tracing through: skipeol advances past the newline to the null region, al becomes 0, and the program should hit je prog_end and exit cleanly—so I keep landing on single pass with no clear path to doubling. Maybe I'm wrong about where exit actually triggers; let me reconsider whether the second read check at that branch point behaves differently than I assumed.
+
+I'm trying to figure out if stdin gets read twice somehow. Tracing the register state after the first read: r12 advances by rax, jumps back to the read loop, sets up rdi=0, rsi pointing into the buffer, rdx=8192, and issues another read syscall—so it's a legitimate second read call, not something else disguised as it.
+
+Wait, maybe eax isn't 28 from that first read at all — let me actually count the real input bytes. Adding up the lines gives 58 bytes total, so eax=58 after the first read, not 28, and that value gets added to r12 before jumping back to 0x80 for the second syscall.
+
+But 58 is the syscall number for vfork on x86-64! That's the bug — the loop re-enters with eax still holding the leftover byte count instead of zero, so the second read actually triggers vfork, forking the process and duplicating all the output. The fix is to redirect the jump at 0x98 to land on 0x7e instead of 0x80, so eax gets reset to zero each iteration; I'm calculating the correct relative offset for that patched jump instruction, though I still need to check whether the jle at 0x8f also needs adjusting.
+
+I verify the relative offset: jump target 0x7e minus the instruction end 0x9d gives -31, which encodes as E1 FF FF FF. With that single byte fixed, I'll output the full corrected hex.
+

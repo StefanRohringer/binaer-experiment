@@ -1,0 +1,40 @@
+BEGIN_C
+#include <stdio.h>
+#include <stdlib.h>
+
+int main(int argc, char **argv)
+{
+    FILE *f;
+    unsigned char buf[65536];
+    size_t n, i;
+    unsigned long count = 0;
+
+    if (argc < 2) {
+        fprintf(stderr, "usage: %s FILE\n", argv[0]);
+        return 1;
+    }
+
+    f = fopen(argv[1], "rb");
+    if (f == NULL) {
+        perror(argv[1]);
+        return 1;
+    }
+
+    while ((n = fread(buf, 1, sizeof buf, f)) > 0) {
+        for (i = 0; i < n; i++) {
+            if (buf[i] == '\n')
+                count++;
+        }
+    }
+
+    if (ferror(f)) {
+        perror(argv[1]);
+        fclose(f);
+        return 1;
+    }
+
+    fclose(f);
+    printf("%lu\n", count);
+    return 0;
+}
+END_C

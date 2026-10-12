@@ -1,0 +1,51 @@
+Ergebnis deiner Abgabe: Test 1: startet nicht (Exec format error)
+
+Testfall 1: Argumente [], stdin b''
+
+Erwartete Ausgabe: b'Hallo Welt\n'
+
+Dateigröße: 167 Byte
+
+readelf -h -l:
+ELF-Header:
+  Magic:   7f 45 4c 46 02 01 01 00 00 00 00 00 00 00 00 00 
+  Klasse:                            ELF64
+  Daten:                             2er-Komplement, Little-Endian
+  Version:                           1 (aktuell)
+  OS/ABI:                            UNIX - System V
+  ABI-Version:                       0
+  Typ:                               EXEC (ausführbare Datei)
+  Maschine:                          Advanced Micro Devices X86-64
+  Version:                           0x1
+  Einstiegspunktadresse:               0x400078
+  Beginn der Programm-Header:          64 (Bytes in Datei)
+  Beginn der Sektions-header:          0 (Bytes in Datei)
+  Flags:                             0x400000
+  Size of this header:               56 (bytes)
+  Size of program headers:           1 (bytes)
+  Number of program headers:         0
+  Size of section headers:           0 (bytes)
+  Number of section headers:         0
+  Section header string table index: 0
+readelf: Warnung: possibly corrupt ELF header - it has a non-zero program header offset, but no program headers
+
+Disassemblierung deiner Bytes (objdump, nur zur Information):
+Ab Dateiposition 0x78:
+  78:	bf 01 00 00 00       	mov    $0x1,%edi
+  7d:	48 be 93 00 40 00 00 	movabs $0x400093,%rsi
+  84:	00 00 00 
+  87:	ba 0b 00 00 00       	mov    $0xb,%edx
+  8c:	b8 01 00 00 00       	mov    $0x1,%eax
+  91:	0f 05                	syscall 
+  93:	31 ff                	xor    %edi,%edi
+  95:	b8 3c 00 00 00       	mov    $0x3c,%eax
+  9a:	0f 05                	syscall 
+  9c:	48 61                	rex.W (bad) 
+  9e:	6c                   	insb   (%dx),%es:(%rdi)
+  9f:	6c                   	insb   (%dx),%es:(%rdi)
+  a0:	6f                   	outsl  %ds:(%rsi),(%dx)
+  a1:	20 57 65             	and    %dl,0x65(%rdi)
+  a4:	6c                   	insb   (%dx),%es:(%rdi)
+  a5:	74 0a                	je     0xb1
+
+Korrigiere das Programm und gib die vollständige neue Fassung wieder zwischen BEGIN_HEX und END_HEX aus.

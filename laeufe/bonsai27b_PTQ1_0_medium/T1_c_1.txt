@@ -1,0 +1,17 @@
+```c
+#include <stdio.h>
+
+int main(void) {
+    printf("Hallo Welt\n");
+    return 0;
+}
+```
+
+BEGIN_C
+#include <stdio.h>
+
+int main(void) {
+    printf("Hallo Welt\n");
+    return 0;
+}
+END_C

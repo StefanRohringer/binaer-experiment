@@ -1,0 +1,2 @@
+I'm planning a recursive descent parser with standard expr/term/factor grammar rules for arithmetic, and considering whether to support unary minus even though inputs are supposed to be non-negative integers, just to be safe.
+

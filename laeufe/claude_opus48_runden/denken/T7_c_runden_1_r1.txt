@@ -1,0 +1,2 @@
+I'll build a recursive descent parser. Numbers are non-negative, but negatives can still arise from subtraction, and division should truncate toward zero like the -7/2=-3 example suggests.
+

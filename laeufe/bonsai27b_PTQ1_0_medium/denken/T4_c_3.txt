@@ -1,0 +1,58 @@
+The user wants a complete C program for Linux that:
+1. Reads a line (max 200 bytes, ending with newline) from stdin
+2. Prints the content in reverse (without the newline), followed by a newline
+3. Exit code 0
+4. Compiled with "gcc -O2"
+5. Can use normal C standard library
+
+Let me write a simple C program:
+
+- Read a line from stdin into a buffer of size 201 (200 chars + null terminator)
+- The line ends with a newline character
+- Output the characters in reverse order, but skip the newline
+- Print a newline at the end
+- Return 0
+
+Let me think about edge cases:
+- The line is at most 200 bytes, ending with newline. So the content is at most 199 chars + newline = 200 bytes.
+- I should read using fgets which is safe.
+- Buffer size: 201 (200 for content + 1 for null terminator, but since the line includes the newline, I need 200 + 1 = 201)
+
+Wait, "höchstens 200 Byte, endet mit Zeilenumbruch" means the line is at most 200 bytes and ends with a newline. So the line could be 1 byte (just "\n") up to 200 bytes (199 chars + "\n").
+
+Using fgets(buf, 201, stdin) would read at most 200 characters (plus the null terminator). That should work fine.
+
+Let me write:
+
+```c
+#include <stdio.h>
+
+int main(void) {
+    char buf[201];
+    if (fgets(buf, sizeof(buf), stdin) == NULL) {
+        return 0;
+    }
+    int len = 0;
+    while (buf[len]) {
+        len++;
+    }
+    // Remove trailing newline if present
+    if (len > 0 && buf[len-1] == '\n') {
+        len--;
+    }
+    // Print in reverse
+    for (int i = len - 1; i >= 0; i--) {
+        putchar(buf[i]);
+    }
+    putchar('\n');
+    return 0;
+}
+```
+
+This should work. Let me double-check:
+- Buffer is 201 bytes, so it can hold up to 200 chars + null terminator.
+- The input line is at most 200 bytes (including newline), so 199 content chars + 1 newline = 200 bytes. This fits in our 201-byte buffer.
+- fgets reads at most sizeof(buf)-1 = 200 characters.
+- We find the length, strip the trailing newline, then print in reverse, then a newline.
+
+Looks good. Let me format the answer properly.

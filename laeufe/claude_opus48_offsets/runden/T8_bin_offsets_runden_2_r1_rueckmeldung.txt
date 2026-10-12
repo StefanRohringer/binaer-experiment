@@ -1,0 +1,193 @@
+Ergebnis deiner Abgabe: Test 5: falsche Ausgabe b'-3\n-1\n2\n-3\n-3\n-1\n2\n-3\n'
+
+Testfall 5: Argumente [], stdin b'x = 7 - 10\nprint x\nprint x % 2\nprint 17 % 5\nprint (0-7)/2\n'
+
+Erwartete Ausgabe: b'-3\n-1\n2\n-3\n'
+
+Tatsächliche Ausgabe: b'-3\n-1\n2\n-3\n-3\n-1\n2\n-3\n'
+
+Exit-Code: 0
+
+Dateigröße: 906 Byte
+
+readelf -h -l:
+ELF-Header:
+  Magic:   7f 45 4c 46 02 01 01 00 00 00 00 00 00 00 00 00 
+  Klasse:                            ELF64
+  Daten:                             2er-Komplement, Little-Endian
+  Version:                           1 (aktuell)
+  OS/ABI:                            UNIX - System V
+  ABI-Version:                       0
+  Typ:                               EXEC (ausführbare Datei)
+  Maschine:                          Advanced Micro Devices X86-64
+  Version:                           0x1
+  Einstiegspunktadresse:               0x400078
+  Beginn der Programm-Header:          64 (Bytes in Datei)
+  Beginn der Sektions-header:          0 (Bytes in Datei)
+  Flags:                             0x0
+  Size of this header:               64 (bytes)
+  Size of program headers:           56 (bytes)
+  Number of program headers:         1
+  Size of section headers:           0 (bytes)
+  Number of section headers:         0
+  Section header string table index: 0
+
+Programm-Header:
+  Typ            Offset   VirtAdr            PhysAdr            DateiGr  SpeiGr   Flg Ausr.
+  LOAD           0x000000 0x0000000000400000 0x0000000000400000 0x00038a 0x040000 RWE 0x1000
+
+Disassemblierung deiner Bytes (objdump, nur zur Information):
+Ab Dateiposition 0x78:
+  78:	41 bc 00 00 41 00    	mov    $0x410000,%r12d
+  7e:	31 c0                	xor    %eax,%eax
+  80:	31 ff                	xor    %edi,%edi
+  82:	4c 89 e6             	mov    %r12,%rsi
+  85:	ba 00 20 00 00       	mov    $0x2000,%edx
+  8a:	0f 05                	syscall 
+  8c:	48 85 c0             	test   %rax,%rax
+  8f:	0f 8e 0d 00 00 00    	jle    0xa2
+  95:	49 01 c4             	add    %rax,%r12
+  98:	e9 e3 ff ff ff       	jmp    0x80
+  9d:	41 c6 04 24 00       	movb   $0x0,(%r12)
+  a2:	bb 00 00 41 00       	mov    $0x410000,%ebx
+  a7:	45 31 ed             	xor    %r13d,%r13d
+  aa:	e9 00 00 00 00       	jmp    0xaf
+  af:	e8 38 02 00 00       	call   0x2ec
+  b4:	0f b6 03             	movzbl (%rbx),%eax
+  b7:	84 c0                	test   %al,%al
+  b9:	0f 84 94 00 00 00    	je     0x153
+  bf:	3c 0a                	cmp    $0xa,%al
+  c1:	0f 85 08 00 00 00    	jne    0xcf
+  c7:	48 ff c3             	inc    %rbx
+  ca:	e9 e0 ff ff ff       	jmp    0xaf
+  cf:	80 3b 70             	cmpb   $0x70,(%rbx)
+  d2:	0f 85 54 00 00 00    	jne    0x12c
+  d8:	80 7b 01 72          	cmpb   $0x72,0x1(%rbx)
+  dc:	0f 85 4a 00 00 00    	jne    0x12c
+  e2:	80 7b 02 69          	cmpb   $0x69,0x2(%rbx)
+  e6:	0f 85 40 00 00 00    	jne    0x12c
+  ec:	80 7b 03 6e          	cmpb   $0x6e,0x3(%rbx)
+  f0:	0f 85 36 00 00 00    	jne    0x12c
+  f6:	80 7b 04 74          	cmpb   $0x74,0x4(%rbx)
+  fa:	0f 85 2c 00 00 00    	jne    0x12c
+ 100:	0f b6 43 05          	movzbl 0x5(%rbx),%eax
+ 104:	3c 61                	cmp    $0x61,%al
+ 106:	0f 82 08 00 00 00    	jb     0x114
+ 10c:	3c 7a                	cmp    $0x7a,%al
+ 10e:	0f 86 18 00 00 00    	jbe    0x12c
+ 114:	48 83 c3 05          	add    $0x5,%rbx
+ 118:	e8 3f 00 00 00       	call   0x15c
+ 11d:	e8 06 02 00 00       	call   0x328
+ 122:	e8 e2 01 00 00       	call   0x309
+ 127:	e9 83 ff ff ff       	jmp    0xaf
+ 12c:	e8 57 01 00 00       	call   0x288
+ 131:	e8 89 01 00 00       	call   0x2bf
+ 136:	56                   	push   %rsi
+ 137:	e8 b0 01 00 00       	call   0x2ec
+ 13c:	48 ff c3             	inc    %rbx
+ 13f:	e8 18 00 00 00       	call   0x15c
+ 144:	5e                   	pop    %rsi
+ 145:	48 89 46 08          	mov    %rax,0x8(%rsi)
+ 149:	e8 bb 01 00 00       	call   0x309
+ 14e:	e9 5c ff ff ff       	jmp    0xaf
+ 153:	b8 3c 00 00 00       	mov    $0x3c,%eax
+ 158:	31 ff                	xor    %edi,%edi
+ 15a:	0f 05                	syscall 
+ 15c:	e8 44 00 00 00       	call   0x1a5
+ 161:	e8 86 01 00 00       	call   0x2ec
+ 166:	8a 13                	mov    (%rbx),%dl
+ 168:	80 fa 2b             	cmp    $0x2b,%dl
+ 16b:	0f 84 0a 00 00 00    	je     0x17b
+ 171:	80 fa 2d             	cmp    $0x2d,%dl
+ 174:	0f 84 16 00 00 00    	je     0x190
+ 17a:	c3                   	ret    
+ 17b:	50                   	push   %rax
+ 17c:	48 ff c3             	inc    %rbx
+ 17f:	e8 21 00 00 00       	call   0x1a5
+ 184:	48 89 c1             	mov    %rax,%rcx
+ 187:	58                   	pop    %rax
+ 188:	48 01 c8             	add    %rcx,%rax
+ 18b:	e9 d1 ff ff ff       	jmp    0x161
+ 190:	50                   	push   %rax
+ 191:	48 ff c3             	inc    %rbx
+ 194:	e8 0c 00 00 00       	call   0x1a5
+ 199:	48 89 c1             	mov    %rax,%rcx
+ 19c:	58                   	pop    %rax
+ 19d:	48 29 c8             	sub    %rcx,%rax
+ 1a0:	e9 bc ff ff ff       	jmp    0x161
+ 1a5:	e8 6a 00 00 00       	call   0x214
+ 1aa:	e8 3d 01 00 00       	call   0x2ec
+ 1af:	8a 13                	mov    (%rbx),%dl
+ 1b1:	80 fa 2a             	cmp    $0x2a,%dl
+ 1b4:	0f 84 13 00 00 00    	je     0x1cd
+ 1ba:	80 fa 2f             	cmp    $0x2f,%dl
+ 1bd:	0f 84 20 00 00 00    	je     0x1e3
+ 1c3:	80 fa 25             	cmp    $0x25,%dl
+ 1c6:	0f 84 2e 00 00 00    	je     0x1fa
+ 1cc:	c3                   	ret    
+ 1cd:	50                   	push   %rax
+ 1ce:	48 ff c3             	inc    %rbx
+ 1d1:	e8 3e 00 00 00       	call   0x214
+ 1d6:	48 89 c1             	mov    %rax,%rcx
+ 1d9:	58                   	pop    %rax
+ 1da:	48 0f af c1          	imul   %rcx,%rax
+ 1de:	e9 c7 ff ff ff       	jmp    0x1aa
+ 1e3:	50                   	push   %rax
+ 1e4:	48 ff c3             	inc    %rbx
+ 1e7:	e8 28 00 00 00       	call   0x214
+ 1ec:	48 89 c1             	mov    %rax,%rcx
+ 1ef:	58                   	pop    %rax
+ 1f0:	48 99                	cqto   
+ 1f2:	48 f7 f9             	idiv   %rcx
+ 1f5:	e9 b0 ff ff ff       	jmp    0x1aa
+ 1fa:	50                   	push   %rax
+ 1fb:	48 ff c3             	inc    %rbx
+ 1fe:	e8 11 00 00 00       	call   0x214
+ 203:	48 89 c1             	mov    %rax,%rcx
+ 206:	58                   	pop    %rax
+ 207:	48 99                	cqto   
+ 209:	48 f7 f9             	idiv   %rcx
+ 20c:	48 89 d0             	mov    %rdx,%rax
+ 20f:	e9 96 ff ff ff       	jmp    0x1aa
+ 214:	e8 d3 00 00 00       	call   0x2ec
+ 219:	8a 13                	mov    (%rbx),%dl
+ 21b:	80 fa 28             	cmp    $0x28,%dl
+ 21e:	0f 84 17 00 00 00    	je     0x23b
+ 224:	80 fa 30             	cmp    $0x30,%dl
+ 227:	0f 82 4c 00 00 00    	jb     0x279
+ 22d:	80 fa 39             	cmp    $0x39,%dl
+ 230:	0f 86 16 00 00 00    	jbe    0x24c
+ 236:	e9 3e 00 00 00       	jmp    0x279
+ 23b:	48 ff c3             	inc    %rbx
+ 23e:	e8 19 ff ff ff       	call   0x15c
+ 243:	e8 a4 00 00 00       	call   0x2ec
+ 248:	48 ff c3             	inc    %rbx
+ 24b:	c3                   	ret    
+ 24c:	31 c0                	xor    %eax,%eax
+ 24e:	8a 13                	mov    (%rbx),%dl
+ 250:	80 fa 30             	cmp    $0x30,%dl
+ 253:	0f 82 1f 00 00 00    	jb     0x278
+ 259:	80 fa 39             	cmp    $0x39,%dl
+ 25c:	0f 87 16 00 00 00    	ja     0x278
+ 262:	48 6b c0 0a          	imul   $0xa,%rax,%rax
+ 266:	0f b6 d2             	movzbl %dl,%edx
+ 269:	48 83 ea 30          	sub    $0x30,%rdx
+ 26d:	48 01 d0             	add    %rdx,%rax
+ 270:	48 ff c3             	inc    %rbx
+ 273:	e9 d6 ff ff ff       	jmp    0x24e
+ 278:	c3                   	ret    
+ 279:	e8 0a 00 00 00       	call   0x288
+ 27e:	e8 3c 00 00 00       	call   0x2bf
+ 283:	48 8b 46 08          	mov    0x8(%rsi),%rax
+ 287:	c3                   	ret    
+ 288:	31 c0                	xor    %eax,%eax
+ 28a:	45 31 c0             	xor    %r8d,%r8d
+ 28d:	8a 13                	mov    (%rbx),%dl
+ 28f:	80 fa 61             	cmp    $0x61,%dl
+ 292:	0f 82 26 00 00 00    	jb     0x2be
+ 298:	80 fa 7a             	cmp    $0x7a,%dl
+ 29b:	0f 87 1d 00 00 00    	ja     0x2be
+ 2a1:	0f b6 d2             	movzbl %dl,%edx
+[... gekürzt]
+
+Korrigiere das Programm und gib die vollständige neue Fassung wieder zwischen BEGIN_HEX und END_HEX im Format OFFSET: BYTES ; Kommentar aus.

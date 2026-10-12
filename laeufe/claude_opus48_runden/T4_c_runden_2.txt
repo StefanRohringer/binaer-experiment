@@ -1,0 +1,28 @@
+Hier ist mein C-Programm:
+
+Es liest eine Zeile von stdin, entfernt den Zeilenumbruch und gibt den Inhalt rückwärts gefolgt von einem Zeilenumbruch aus.
+
+BEGIN_C
+#include <stdio.h>
+#include <string.h>
+
+int main(void) {
+    char buf[256];
+    if (fgets(buf, sizeof(buf), stdin) == NULL) {
+        /* Keine Eingabe: nur Zeilenumbruch ausgeben */
+        putchar('\n');
+        return 0;
+    }
+    size_t len = strlen(buf);
+    /* Zeilenumbruch entfernen, falls vorhanden */
+    if (len > 0 && buf[len - 1] == '\n') {
+        len--;
+    }
+    /* Rückwärts ausgeben */
+    for (size_t i = len; i > 0; i--) {
+        putchar(buf[i - 1]);
+    }
+    putchar('\n');
+    return 0;
+}
+END_C

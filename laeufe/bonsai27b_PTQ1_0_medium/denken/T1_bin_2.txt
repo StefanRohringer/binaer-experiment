@@ -1,0 +1,1196 @@
+The user wants a complete ELF64 binary that prints "Hallo Welt\n" and exits with code 0. No libc, just Linux syscalls. They want the raw bytes in hex.
+
+Let me construct a minimal static ELF64 binary.
+
+The program needs to:
+1. Call `write(1, "Hallo Welt\n", 11)` - fd=1, buf="Hallo Welt\n", count=11
+2. Call `exit(0)` or `_exit(0)` - sys = 60, arg = 0
+
+The string "Hallo Welt\n" is 11 bytes: H-a-l-l-o-space-W-e-l-t-\n
+
+Let me build the ELF64 header and a minimal program:
+
+ELF64 header:
+- e_ident: 0x7f 0x45 0x4c 0x46 0x00 0x00 0x00 0x00 (0x7F 45 4C 46 00 00 00 00)
+- e_machine: 0x3C (x86-64)
+- e_type: 0x01 (EXEC)
+- e_entry: entry point address
+- e_phoff: program header table offset
+- e_shoff: section header table offset
+- e_flags: 0x00000000
+- e_ehsize: 64
+- e_phentsize: 56
+- e_phnum: 1
+- e_shentsize: 64
+- e_shnum: 0
+- e_shstrndx: 0
+
+Then program header:
+- p_type: 0x0000000000000001 (PT_LOAD)
+- p_flags: 0x05 (RX)
+- p_offset: 0x1000 (offset in file)
+- p_vaddr: 0x400000
+- p_paddr: 0x400000
+- p_shoff: 0
+- p_filesz: size of the code
+- p_memsz: size of the code
+
+Then the code at offset 0x1000:
+
+The code (x86-64):
+- syscall for write:
+  - mov rdi, 1          ; fd
+  - mov rsi, msg         ; buffer
+  - mov rdx, 11          ; len
+  - mov rax, 1           ; write syscall
+  - syscall
+  
+- syscall for exit:
+  - mov rax, 60          ; exit
+  - mov rdi, 0           ; status
+  - syscall
+
+Let me write out the instructions:
+- mov rdi, 1: B8 01 00 00 00 00 00 00 00 00 (imm32) or better: 01 00 00 00 00 00 00 00 → actually let's use mov imm32, reg: B8 01 00 00 00
+- Actually: mov rdi, 1 = B8 01 00 00 00 (5 bytes) - no wait, that's mov eax, 1. For rdi it's: B9 01 00 00 00 (5 bytes)
+
+Wait, let me reconsider. In 64-bit mode:
+- mov rdi, 1: B9 01 00 00 00 (5 bytes) - B9 is "mov rdi, imm32"
+- mov rsi, msg: 48 01 00 00 00 00 00 00 ... no, that's wrong.
+
+Actually for mov to a 64-bit register with a 64-bit immediate, we need a larger encoding. But since msg is at a fixed address, we can use a 32-bit immediate with sign extension.
+
+Let me think about the layout:
+- ELF header: 64 bytes (offsets 0-63)
+- Program header: 56 bytes (offsets 64-119)
+- Code at offset 0x1000 (4096)
+- String at end
+
+Actually, let me just use a simple layout:
+- Offset 0: ELF header (64 bytes)
+- Offset 0x40 (64): Program header (56 bytes)
+- Offset 0x100 (256): Code
+- After code: String "Hallo Welt\n"
+
+Let me use vaddr = 0x1000, file offset 0x1000.
+
+Actually, let me simplify. I'll put everything at vaddr 0x1000.
+
+File layout:
+- 0x00 - 0x3F: ELF header (64 bytes)
+- 0x40 - 0x77: Program header (56 bytes)
+- 0x78 - 0x77: padding to 0x1000? No, that's too much.
+
+Let me use a simpler approach:
+- ELF header at 0x00 (64 bytes)
+- Program header at 0x40 (56 bytes)  
+- Code at 0x100 (256) - wait, I need to align.
+
+Actually for a minimal ELF, I can do:
+- ELF header at 0x00
+- Program header at 0x40
+- Code at 0x100 (256) - I need to fill 0x78 to 0x0FF with zeros
+
+Or I can just put code at 0x78 and vaddr at 0x78. That's simpler.
+
+Actually, the simplest approach:
+- ELF header: 0x00-0x3F (64 bytes)
+- Program header: 0x40-0x77 (56 bytes)
+- Padding: 0x78-0xFF (fill with 0s)
+- Code: 0x100 onwards
+- String: after code
+
+Wait, but the program header says the code is at vaddr. Let me set vaddr = 0x1000 and file offset = 0x1000. That's the standard.
+
+File layout:
+- 0x0000-0x003F: ELF header (64 bytes)
+- 0x0040-0x0077: Program header (56 bytes)
+- 0x0078-0x0FFF: zeros (4096 - 0x80 = 4032 bytes of padding)
+- 0x1000: Code starts
+- After code: String "Hallo Welt\n"
+
+Total size: 0x1000 + code_size + 11
+
+Let me compute the code:
+```
+; mov rsi, 0x1028 (address of string, relative to 0x1000)
+; Actually, let me compute exact addresses.
+```
+
+Code at 0x1000:
+```
+mov rdi, 1           ; B9 01 00 00 00        (5 bytes, offset 0x1000)
+mov rdx, 11          ; BA 0B 00 00 00        (5 bytes, offset 0x1005)
+lea rsi, [rel msg]   ; 48 8D 3D 28 00 00 00   (7 bytes, offset 0x100A)
+mov rax, 1           ; B8 01 00 00 00        (5 bytes, offset 0x1011)
+syscall              ; 0F 05                (2 bytes, offset 0x1016)
+mov rax, 60          ; B8 3C 00 00 00        (5 bytes, offset 0x1018)
+xor edi, edi         ; 31 C0               (2 bytes, offset 0x101D)
+syscall              ; 0F 05               (2 bytes, offset 0x101F)
+```
+
+Wait, let me recalculate. Using `lea` with RIP-relative addressing:
+- lea rsi, [rel msg] at offset 0x100A: 48 8D 3D [disp32]
+- The RIP-relative offset: after the instruction (7 bytes), RIP will be at 0x100A + 7 = 0x1011
+- msg is at 0x1000 + 0x28 = 0x1028 (let me verify)
+
+Code sizes:
+- B9 01 00 00 00 = 5 bytes → 0x1000-0x1004
+- BA 0B 00 00 00 = 5 bytes → 0x1005-0x1009
+- 48 8D 3D 28 00 00 00 = 7 bytes → 0x100A-0x1010
+- B8 01 00 00 00 = 5 bytes → 0x1011-0x1015
+- 0F 05 = 2 bytes → 0x1016-0x1017
+- B8 3C 00 00 00 = 5 bytes → 0x1018-0x101C
+- 31 C0 = 2 bytes → 0x101D-0x101E
+- 0F 05 = 2 bytes → 0x101F-0x1020
+
+So the string should be at 0x1021. The displacement from RIP (0x1011) to 0x1021 is 0x10.
+
+Wait, let me redo:
+- lea is at 0x100A, 7 bytes, so next instruction is at 0x1011
+- RIP-relative displacement = msg_address - next_rip = msg_address - 0x1011
+
+If string is at 0x1021:
+displacement = 0x1021 - 0x1011 = 0x00000010
+
+Let me verify the total code: 5+5+7+5+2+5+2+2 = 33 bytes = 0x21
+
+So code is at 0x1000, 33 bytes, ending at 0x1020.
+String "Hallo Welt\n" at 0x1021, 11 bytes, ending at 0x102B.
+
+Total file size: 0x102C = 4140 bytes
+
+Program header:
+- p_type: 1 (PT_LOAD)
+- p_flags: 5 (RX)
+- p_offset: 0x1000
+- p_vaddr: 0x1000
+- p_paddr: 0x1000
+- p_shoff: 0
+- p_filesz: 0x2C (44 bytes = 33 + 11)
+- p_memsz: 0x2C
+
+ELF header fields:
+- e_entry: 0x1000
+- e_phoff: 0x40
+- e_shoff: 0
+- e_flags: 0
+- e_ehsize: 0x40
+- e_phentsize: 0x38
+- e_phnum: 1
+- e_shentsize: 0x40
+- e_shnum: 0
+- e_shstrndx: 0
+
+Now let me write out all the bytes:
+
+ELF header (64 bytes):
+0x7F, 0x45, 0x4C, 0x46, 0x00, 0x00, 0x00, 0x00  (e_ident)
+0x01 (e_class, 64-bit)
+0x00 (e_data, little-endian)
+0x01 (e_type, executable)
+0x00 (e_machine low)
+0x3C (e_machine high) - wait no, little endian: e_machine = 0x0000003C, so bytes are 0x3C 0x00 0x00 0x00
+0x01 0x00 0x00 0x00 (e_type = 0x00000001)
+0x00 0x00 0x10 0x00 (e_entry low) - wait, 0x1000 = 0x00001000, bytes: 0x00 0x10 0x00 0x00
+0x40 0x00 0x00 0x00 (e_phoff = 0x40)
+0x00 0x00 0x00 0x00 (e_shoff = 0)
+0x00 0x00 0x00 0x00 (e_flags = 0)
+0x40 0x00 0x00 0x00 (e_ehsize = 64)
+0x38 0x00 0x00 0x00 (e_phentsize = 56)
+0x01 0x00 0x00 0x00 (e_phnum = 1)
+0x40 0x00 0x00 0x00 (e_shentsize = 64)
+0x00 0x00 0x00 0x00 (e_shnum = 0)
+0x00 0x00 0x00 0x00 (e_shstrndx = 0)
+
+That's 8 + 20 + 64 = wait let me count:
+- e_ident: 8 bytes
+- e_class: 1
+- e_data: 1
+- e_version: 1
+- e_os: 1
+- e_machine: 4
+- e_type: 4
+- e_entry: 8
+- e_phoff: 8
+- e_shoff: 8
+- e_flags: 4
+- e_ehsize: 2
+- e_phentsize: 2
+- e_phnum: 2
+- e_shentsize: 2
+- e_shnum: 2
+- e_shstrndx: 2
+- padding: 8
+
+Total: 8+1+1+1+1+4+4+8+8+8+4+2+2+2+2+2+2+8 = 64 ✓
+
+Let me list all 64 bytes:
+0x7F, 0x45, 0x4C, 0x46, 0x00, 0x00, 0x00, 0x00,
+0x01, 0x00, 0x01, 0x00,
+0x3C, 0x00, 0x00, 0x00,
+0x01, 0x00, 0x00, 0x00,
+0x00, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+0x00, 0x00, 0x00, 0x00,
+0x40, 0x00,
+0x38, 0x00,
+0x01, 0x00,
+0x40, 0x00,
+0x00, 0x00,
+0x00, 0x00,
+0x00, 0x00  (padding to 64)
+
+Wait, let me recount. After e_shstrndx (2 bytes), we have 8 bytes of padding to reach 64 total.
+
+Let me count byte by byte:
+1: 0x7F
+2: 0x45
+3: 0x4C
+4: 0x46
+5: 0x00
+6: 0x00
+7: 0x00
+8: 0x00
+9: 0x01  (e_class)
+10: 0x00 (e_data)
+11: 0x01 (e_version)
+12: 0x00 (e_os)
+13: 0x3C (e_machine byte0)
+14: 0x00
+15: 0x00
+16: 0x00
+17: 0x01 (e_type byte0)
+18: 0x00
+19: 0x00
+20: 0x00
+21: 0x00 (e_entry byte0)
+22: 0x10
+23: 0x00
+24: 0x00
+25: 0x00
+26: 0x00
+27: 0x00
+28: 0x00
+29: 0x40 (e_phoff byte0)
+30: 0x00
+31: 0x00
+32: 0x00
+33: 0x00
+34: 0x00
+35: 0x00
+36: 0x00
+37: 0x00 (e_shoff byte0)
+38: 0x00
+39: 0x00
+40: 0x00
+41: 0x00
+42: 0x00
+43: 0x00
+44: 0x00
+45: 0x00 (e_flags byte0)
+46: 0x00
+47: 0x00
+48: 0x00
+49: 0x40 (e_ehsize byte0)
+50: 0x00
+51: 0x38 (e_phentsize byte0)
+52: 0x00
+53: 0x01 (e_phnum byte0)
+54: 0x00
+55: 0x40 (e_shentsize byte0)
+56: 0x00
+57: 0x00 (e_shnum byte0)
+58: 0x00
+59: 0x00 (e_shstrndx byte0)
+60: 0x00
+61: 0x00
+62: 0x00
+63: 0x00
+64: 0x00
+
+Program header (56 bytes) at offset 0x40:
+- p_type: 1 → 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+- p_flags: 5 → 0x05, 0x00, 0x00, 0x00
+- p_offset: 0x1000 → 0x00, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+- p_vaddr: 0x1000 → 0x00, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+- p_paddr: 0x1000 → 0x00, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+- p_shoff: 0 → 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+- p_filesz: 0x2C → 0x2C, 0x00, 0x00, 0x00
+- p_memsz: 0x2C → 0x2C, 0x00, 0x00, 0x00
+
+That's 8+4+8+8+8+8+4+4 = 52... wait, that's only 52. Let me recount.
+
+p_type: 8 bytes
+p_flags: 4 bytes
+p_offset: 8 bytes
+p_vaddr: 8 bytes
+p_paddr: 8 bytes
+p_shoff: 8 bytes
+p_filesz: 4 bytes
+p_memsz: 4 bytes
+Total: 8+4+8+8+8+8+4+4 = 52 bytes
+
+But e_phentsize should be 56 (0x38). So I need 4 more bytes of padding.
+
+Actually, looking at the ELF spec, p_shoff is 8 bytes (offset), p_filesz is 4 bytes, p_memsz is 4 bytes. That gives 8+4+8+8+8+8+4+4 = 52. But the standard program header is 56 bytes. Let me check...
+
+Oh wait, I think I have the layout wrong. Let me look again:
+
+p_type: uint64_t (8)
+p_flags: uint32_t (4)
+p_offset: uint64_t (8)
+p_vaddr: uint64_t (8)
+p_paddr: uint64_t (8)
+p_shoff: uint64_t (8)
+p_filesz: uint32_t (4)
+p_memsz: uint32_t (4)
+
+Total: 8+4+8+8+8+8+4+4 = 52
+
+But e_phentsize is typically 56 for ELF64. Hmm, actually looking at it more carefully, the standard says the program header entry is 56 bytes in ELF64. Let me check if I'm missing something...
+
+Actually, I think the issue is that p_filesz and p_memsz are both 4 bytes, but there might be padding. Let me look at the ELF64 phdr structure:
+
+```
+offset:  0:  p_type   (8 bytes)
+         8:  p_flags  (4 bytes)
+        12:  p_offset (8 bytes)
+        20:  p_vaddr  (8 bytes)
+        28:  p_paddr  (8 bytes)
+        36:  p_shoff  (8 bytes)
+        44:  p_filesz (4 bytes)
+        48:  p_memsz  (4 bytes)
+        52:  padding  (4 bytes) → total 56
+```
+
+Yes! There are 4 bytes of padding at the end. So p_filesz at offset 44 (0x2C), p_memsz at offset 48 (0x30), and 4 bytes of zeros at offset 52 (0x34).
+
+So the program header bytes are:
+0x01 0x00 0x00 0x00 0x00 0x00 0x00 0x00  (p_type = 1)
+0x05 0x00 0x00 0x00  (p_flags = 5)
+0x00 0x10 0x00 0x00 0x00 0x00 0x00 0x00  (p_offset = 0x1000)
+0x00 0x10 0x00 0x00 0x00 0x00 0x00 0x00  (p_vaddr = 0x1000)
+0x00 0x10 0x00 0x00 0x00 0x00 0x00 0x00  (p_paddr = 0x1000)
+0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00  (p_shoff = 0)
+0x2C 0x00 0x00 0x00  (p_filesz = 0x2C)
+0x2C 0x00 0x00 0x00  (p_memsz = 0x2C)
+0x00 0x00 0x00 0x00  (padding)
+
+That's 56 bytes ✓
+
+Now the padding from 0x78 to 0x0FF:
+0x78 to 0xFFF is 0xFFF - 0x78 + 1 = 0xF80 = 3968 bytes of zeros.
+
+Then code at 0x1000:
+
+```
+B9 01 00 00 00    ; mov rdi, 1
+BA 0B 00 00 00    ; mov rdx, 11
+48 8D 3D 10 00 00 00  ; lea rsi, [rel msg] (disp = 0x10)
+B8 01 00 00 00    ; mov rax, 1 (write)
+0F 05             ; syscall
+B8 3C 00 00 00    ; mov rax, 60 (exit)
+31 C0             ; xor edi, edi
+0F 05             ; syscall
+```
+
+Wait, I need to recheck the displacement. The lea instruction is at file offset 0x1000 + 5 + 5 = 0x100A. It's 7 bytes long, so the next instruction (RIP after) is at 0x100A + 7 = 0x1011.
+
+The string "Hallo Welt\n" is at 0x1000 + 5+5+7+5+2+5+2+2 = 0x1000 + 33 = 0x1021.
+
+Displacement = 0x1021 - 0x1011 = 0x00000010. ✓
+
+So the bytes are: 48 8D 3D 10 00 00 00
+
+String "Hallo Welt\n":
+H = 0x48
+a = 0x61
+l = 0x6C
+l = 0x6C
+o = 0x6F
+  (space) = 0x20
+W = 0x57
+e = 0x65
+l = 0x6C
+t = 0x74
+\n = 0x0A
+
+Total file: 0x1000 (padding) + 33 (code) + 11 (string) = 0x1000 + 0x2C = 0x102C bytes
+
+Now let me write out the complete hex:
+
+ELF header (64 bytes, offsets 0x00-0x3F):
+7F 45 4C 46 00 00 00 00
+01 00 01 00
+3C 00 00 00
+01 00 00 00
+00 10 00 00 00 00 00 00
+40 00 00 00 00 00 00 00
+00 00 00 00 00 00 00 00
+00 00 00 00
+40 00
+38 00
+01 00
+40 00
+00 00
+00 00
+00 00
+
+Wait, that's:
+8 + 4 + 4 + 4 + 8 + 8 + 8 + 4 + 2 + 2 + 2 + 2 + 2 + 2 + 2 = 
+8+4=12, +4=16, +4=20, +8=28, +8=36, +8=44, +4=48, +2=50, +2=52, +2=54, +2=56, +2=58, +2=60, +2=62
+
+That's 62 bytes, not 64. I'm missing 2 bytes of padding at the end.
+
+Let me recount:
+- e_ident: 8
+- e_class: 1
+- e_data: 1  
+- e_version: 1
+- e_os: 1
+- e_machine: 4
+- e_type: 4
+- e_entry: 8
+- e_phoff: 8
+- e_shoff: 8
+- e_flags: 4
+- e_ehsize: 2
+- e_phentsize: 2
+- e_phnum: 2
+- e_shentsize: 2
+- e_shnum: 2
+- e_shstrndx: 2
+- padding: 8
+
+8+1+1+1+1+4+4+8+8+8+4+2+2+2+2+2+2+8 = 64 ✓
+
+So after e_shstrndx (bytes 59-60), I need 6 bytes... wait no.
+
+Let me count again more carefully:
+Bytes 1-8: e_ident (8)
+Byte 9: e_class (1)
+Byte 10: e_data (1)
+Byte 11: e_version (1)
+Byte 12: e_os (1)
+Bytes 13-16: e_machine (4)
+Bytes 17-20: e_type (4)
+Bytes 21-28: e_entry (8)
+Bytes 29-36: e_phoff (8)
+Bytes 37-44: e_shoff (8)
+Bytes 45-48: e_flags (4)
+Bytes 49-50: e_ehsize (2)
+Bytes 51-52: e_phentsize (2)
+Bytes 53-54: e_phnum (2)
+Bytes 55-56: e_shentsize (2)
+Bytes 57-58: e_shnum (2)
+Bytes 59-60: e_shstrndx (2)
+Bytes 61-64: padding (4)
+
+8+1+1+1+1+4+4+8+8+8+4+2+2+2+2+2+2+4 = 64 ✓
+
+So the ELF header is:
+7F 45 4C 46 00 00 00 00
+01 00 01 00
+3C 00 00 00
+01 00 00 00
+00 10 00 00 00 00 00 00
+40 00 00 00 00 00 00 00
+00 00 00 00 00 00 0x00 0x00
+00 00 00 00
+40 00
+38 00
+01 00
+40 00
+00 00
+00 00
+00 00
+00 00 00 00
+
+Wait, I need to be more careful. Let me lay it out byte by byte:
+
+0x00: 7F
+0x01: 45
+0x02: 4C
+0x03: 46
+0x04: 00
+0x05: 00
+0x06: 00
+0x07: 00
+0x08: 01 (e_class)
+0x09: 00 (e_data)
+0x0A: 01 (e_version)
+0x0B: 00 (e_os)
+0x0C: 3C (e_machine)
+0x0D: 00
+0x0E: 00
+0x0F: 00
+0x10: 01 (e_type)
+0x11: 00
+0x12: 00
+0x13: 00
+0x14: 00 (e_entry)
+0x15: 10
+0x16: 00
+0x17: 00
+0x18: 00
+0x19: 00
+0x1A: 00
+0x1B: 00
+0x1C: 40 (e_phoff)
+0x1D: 00
+0x1E: 00
+0x1F: 00
+0x20: 00
+0x21: 00
+0x22: 00
+0x23: 00
+0x24: 00 (e_shoff)
+0x25: 00
+0x26: 00
+0x27: 00
+0x28: 00
+0x29: 00
+0x2A: 00
+0x2B: 00
+0x2C: 00 (e_flags)
+0x2D: 00
+0x2E: 00
+0x2F: 00
+0x30: 40 (e_ehsize)
+0x31: 00
+0x32: 38 (e_phentsize)
+0x33: 00
+0x34: 01 (e_phnum)
+0x35: 00
+0x36: 40 (e_shentsize)
+0x37: 00
+0x38: 00 (e_shnum)
+0x39: 00
+0x3A: 00 (e_shstrndx)
+0x3B: 00
+0x3C: 00
+0x3D: 00
+0x3E: 00
+0x3F: 00
+
+That's 64 bytes (0x00 to 0x3F). ✓
+
+Program header at 0x40 to 0x77 (56 bytes):
+0x40: 01 (p_type)
+0x41: 00
+0x42: 00
+0x43: 00
+0x44: 00
+0x45: 00
+0x46: 00
+0x47: 00
+0x48: 05 (p_flags)
+0x49: 00
+0x50: 00
+0x51: 00
+0x52: 00 (p_offset)
+0x53: 10
+0x54: 00
+0x55: 00
+0x56: 00
+0x57: 00
+0x58: 00
+0x59: 00
+0x5A: 00 (p_vaddr)
+0x5B: 10
+0x5C: 00
+0x5D: 00
+0x5E: 00
+0x5F: 00
+0x60: 00
+0x61: 00
+0x62: 00 (p_paddr)
+0x63: 10
+0x64: 00
+0x65: 00
+0x66: 00
+0x67: 00
+0x68: 00
+0x69: 00
+0x6A: 00 (p_shoff)
+0x6B: 00
+0x6C: 00
+0x6D: 00
+0x6E: 00
+0x6F: 00
+0x70: 00
+0x71: 00
+0x72: 00 (p_filesz)
+0x73: 00
+0x74: 00
+0x75: 00
+0x76: 00 (p_memsz)
+0x77: 00
+0x78: 00
+0x79: 00
+0x7A: 00
+
+Wait, p_filesz is at offset 0x72 (which is 0x40 + 44 = 0x6C... let me recalculate.
+
+p_type starts at 0x40, 8 bytes → 0x40-0x47
+p_flags at 0x48, 4 bytes → 0x48-0x4B
+p_offset at 0x4C, 8 bytes → 0x4C-0x53
+p_vaddr at 0x54, 8 bytes → 0x54-0x5B
+p_paddr at 0x5C, 8 bytes → 0x5C-0x63
+p_shoff at 0x64, 8 bytes → 0x64-0x6B
+p_filesz at 0x6C, 4 bytes → 0x6C-0x6F
+p_memsz at 0x70, 4 bytes → 0x70-0x73
+padding at 0x74, 4 bytes → 0x74-0x77
+
+So the program header occupies 0x40-0x77 (56 bytes). ✓
+
+Let me redo:
+0x40: 01 00 00 00 00 00 00 00  (p_type = 1)
+0x48: 05 00 00 00             (p_flags = 5)
+0x4C: 00 10 00 00 00 00 00 00 (p_offset = 0x1000)
+0x54: 00 10 00 00 00 00 00 00 (p_vaddr = 0x1000)
+0x5C: 00 10 00 00 00 00 00 00 (p_paddr = 0x1000)
+0x64: 00 00 00 00 00 00 00 00 (p_shoff = 0)
+0x6C: 2C 00 00 00             (p_filesz = 0x2C)
+0x70: 2C 00 00 00             (p_memsz = 0x2C)
+0x74: 00 00 00 00             (padding)
+
+Then zeros from 0x78 to 0x0FF: that's 0x1000 - 0x78 = 0xF80 = 3968 bytes of 0x00.
+
+Code at 0x1000:
+0x1000: B9 01 00 00 00
+0x1005: BA 0B 00 00 00
+0x100A: 48 8D 3D 10 00 00 00
+0x1011: B8 01 00 00 00
+0x1016: 0F 05
+0x1018: B8 3C 00 00 00
+0x101D: 31 C0
+0x101F: 0F 05
+
+String at 0x1021:
+0x1021: 48 61 6C 6C 6F 20 57 65 6C 74 0A
+
+Total file size: 0x102C = 4140 bytes.
+
+Let me now compile the complete hex string. I'll group it into lines of 16 bytes for readability.
+
+Actually, let me just write it all out as a continuous list of hex bytes. The user said "Leerzeichen und Zeilenumbrüche erlaubt" so I can format it however I want.
+
+Let me write the complete binary:
+
+Bytes 0x00-0x3F (ELF header, 64 bytes):
+7F 45 4C 46 00 00 00 00 01 00 01 00 3C 00 00 00 01 00 00 00 00 10 00 00 00 00 00 00 40 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 40 00 38 00 01 00 40 00 00 00 00 00 00 00 00 00
+
+Bytes 0x40-0x77 (Program header, 56 bytes):
+01 00 00 00 00 00 00 00 05 00 00 00 00 10 00 00 00 00 00 00 00 10 00 00 00 00 00 00 00 10 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 2C 00 00 00 2C 00 00 00 00 00 00 00
+
+Wait, let me recount. p_type (8) + p_flags (4) = 12 bytes so far.
+p_offset (8) = 20
+p_vaddr (8) = 28
+p_paddr (8) = 36
+p_shoff (8) = 44
+p_filesz (4) = 48
+p_memsz (4) = 52
+padding (4) = 56 ✓
+
+So:
+0x40: 01 00 00 00 00 00 00 00  (8)
+0x48: 05 00 00 00              (4)
+0x4C: 00 10 00 00 00 00 00 00 (8)
+0x54: 00 10 00 00 00 00 00 00 (8)
+0x5C: 00 10 00 00 00 00 00 00 (8)
+0x64: 00 00 00 00 00 00 00 00 (8)
+0x6C: 2C 00 00 00              (4)
+0x70: 2C 00 00 00              (4)
+0x74: 00 00 00 00              (4)
+
+Total: 56 bytes from 0x40 to 0x77. ✓
+
+Then zeros from 0x78 to 0x0FF (3968 bytes).
+
+Code at 0x1000:
+B9 01 00 00 00 BA 0B 00 00 00 48 8D 3D 10 00 00 00 B8 01 00 00 00 0F 05 B8 3C 00 00 00 31 C0 0F 05
+
+That's 33 bytes.
+
+String at 0x1021:
+48 61 6C 6C 6F 20 57 65 6C 74 0A
+
+That's 11 bytes.
+
+Total: 64 + 56 + 3968 + 33 + 11 = 4132... let me recheck.
+0x78 to 0x0FF: 0x0FF - 0x078 + 1 = 0x0F8 = 396 bytes? No.
+0x0FF - 0x078 = 0xF8 = 248. + 1 = 249? No wait.
+
+0x0FF in decimal: 15*256 - 1 = 3840 - 1 = 3839? No.
+0x0FF = 255 (hex F = 15, so FF = 255)
+
+Wait, I'm confusing myself. Let me think in hex:
+0x78 to 0xFF is the padding within the first page.
+0xFF - 0x78 + 1 = 0x89 = 137 bytes.
+
+Then 0x100 to 0x0FFF: 0x0FFF - 0x100 + 1 = 0xFEFF = 6527 bytes.
+
+Wait no. The file offset for the code is 0x1000. So:
+- 0x00 to 0x3F: ELF header (64 bytes)
+- 0x40 to 0x77: Program header (56 bytes)
+- 0x78 to 0x0FFF: padding (0x0FFF - 0x78 + 1 = 0xF80 = 3968 bytes)
+- 0x1000 to 0x1020: code (33 bytes)
+- 0x1021 to 0x102B: string (11 bytes)
+
+Total: 64 + 56 + 3968 + 33 + 11 = 4132 bytes = 0x102C
+
+Let me verify: 0x78 + 3968 = 0x78 + 0xF80 = 0xFF8? No.
+0x78 + 3968: 3968 = 0xF80. 0x78 + 0xF80 = 0xFFF. Then +1 = 0x1000. ✓
+
+OK so the padding from 0x78 to 0xFF (inclusive) is 0x80 bytes, and from 0x100 to 0xFFF is 0xF00 bytes. Total padding: 0x80 + 0xF00 = 0xF80 = 3968 bytes. ✓
+
+Now let me write the complete hex output. I'll write it in groups for readability but the user just needs all the bytes.
+
+Actually, for the output format, let me just write all 4132 bytes as hex, grouped in lines of maybe 16 bytes.
+
+Let me also double-check my instruction encodings:
+
+`mov rdi, 1`: opcode B9, imm32 = 01 00 00 00 → B9 01 00 00 00 (5 bytes) ✓
+`mov rdx, 11`: opcode BA, imm32 = 0B 00 00 00 → BA 0B 00 00 00 (5 bytes) ✓
+`lea rsi, [rel msg]`: opcode 48 8D 3D, disp32 = 10 00 00 00 → 48 8D 3D 10 00 00 00 (7 bytes) ✓
+`mov rax, 1`: opcode B8, imm32 = 01 00 00 00 → B8 01 00 00 00 (5 bytes) ✓
+`syscall`: 0F 05 (2 bytes) ✓
+`mov rax, 60`: opcode B8, imm32 = 3C 00 00 00 → B8 3C 00 00 00 (5 bytes) ✓
+`xor edi, edi`: opcode 31 C0 (2 bytes) ✓
+`syscall`: 0F 05 (2 bytes) ✓
+
+String: H(48) a(61) l(6C) l(6C) o(6F) space(20) W(57) e(65) l(6C) t(74) \n(0A) ✓
+
+Everything checks out. Let me now format the complete output.
+
+I'll present it as 16 bytes per line for readability.
+
+Total bytes: 4132. That's 258 lines of 16 bytes each. That's a lot but doable.
+
+Actually, let me just present it compactly. The user said whitespace and newlines are allowed. Let me do 16 bytes per line.
+
+Wait, 4132 / 16 = 258.25, so 257 full lines of 16 and 1 line of 4 bytes.
+
+Let me write it out:
+
+Line 0 (offset 0x0000): 7F 45 4C 46 00 00 00 00 01 00 01 00 3C 00 00 00
+Line 1 (offset 0x0010): 01 00 00 00 00 10 00 00 00 00 00 00 40 00 00 00
+Line 2 (offset 0x0020): 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+Line 3 (offset 0x0030): 00 00 00 00 40 00 38 00 01 00 40 00 00 00 00 00
+Line 4 (offset 0x0040): 01 00 00 00 00 00 00 00 05 00 00 00 00 10 00 00
+Line 5 (offset 0x0050): 00 00 00 00 00 10 00 00 00 00 00 00 00 10 00 00
+Line 6 (offset 0x0060): 00 00 00 00 00 10 00 00 00 00 00 00 00 00 00 00
+Line 7 (offset 0x0070): 00 00 00 00 2C 00 00 00 2C 00 00 00 00 00 00 00
+Line 8 (offset 0x0080): 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+... all zeros until 0x0FFF
+Line for 0x1000: B9 01 00 00 00 BA 0B 00 00 00 48 8D 3D 10 00 00 00
+Next line: B8 01 00 00 00 0F 05 B8 3C 00 00 00 31 C0 0F 05
+Next line: 48 61 6C 6C 6F 20 57 65 6C 74 0A
+
+Let me verify the padding count. From offset 0x78 to 0xFF is 0x80 - 0x78 = 0x08 = 8 bytes in the first line (0x78-0x7F). Then 0x80 to 0x0FFF is 0x1000 - 0x80 - 1 = 0xF80 - 1 = 0xF7F bytes? 
+
+No: 0x80 to 0x0FFF (inclusive): 0x0FFF - 0x80 + 1 = 0xFF8 = 4088 bytes.
+
+Wait: 0x0FFF = 4095, 0x80 = 128. 4095 - 128 + 1 = 3968. Same as before. ✓
+
+OK, so from offset 0x78 (line 7, byte 8) to 0x0FF, we have 3968 bytes of 0x00.
+
+Line 7 starts at 0x70, so byte 8 of line 7 is at 0x78. That's the first padding byte.
+The last padding byte is at 0xFF.
+
+So the zeros start at line 7, byte index 8 (the 9th byte in that line), and continue through line for 0x0F0 (which covers 0xF0-0xFF).
+
+Let me count: from 0x78 to 0xFF = 0x80 bytes. From 0x100 to 0xFFF = 0xF00 bytes. Total 0xF80 = 3968.
+
+Lines of 16:
+- Line 7 (0x70): bytes 0x70-0x77. Bytes 0x78 is in next line? No, 0x78 is in line 8 (0x80-0x8F)? Wait no.
+
+Let me redo the line offsets:
+Line n covers offsets 0x00*n to 0x00*n + 0x0F.
+Line 0: 0x00-0x0F
+Line 1: 0x10-0x1F
+...
+Line 7: 0x70-0x7F
+Line 8: 0x80-0x8F
+...
+Line 255: 0xFFF... wait, 0xFF0-0xFFF.
+
+Line n covers 0x00*n to 0x00*n + 0x0F.
+0x78 is in line 7 (0x70-0x7F). Specifically, byte 8 in line 7.
+0x7F is in line 7, byte 15.
+0x80 is in line 8.
+...
+0xFFF is in line 255 (0xFF0-0xFFF).
+
+So padding is:
+- Line 7: bytes 8-15 (8 bytes of 0x00)
+- Lines 8-255: all zeros (248 lines × 16 = 3968 bytes)
+- Line 256: starts at 0x1000
+
+Wait, line 8 to line 255 is 248 lines = 3968 bytes. Plus 8 bytes from line 7 = 3976. That doesn't match.
+
+Let me recount. Padding is from 0x78 to 0xFFF inclusive.
+0xFFF - 0x78 + 1 = 0xF80 = 3968 bytes.
+
+Line 7 covers 0x70 to 0x7F. Padding in this line: 0x78 to 0x7F = 8 bytes.
+Lines 8 to 255: 0x80 to 0xFF = 0x100 - 0x80 = 0x80 = 128 bytes.
+Lines 256 to 255... wait this doesn't work.
+
+Lines: 0x80 to 0x0FFF is 0x0FFF - 0x80 + 1 = 0xFF8 - ... 
+
+Let me just compute:
+Number of lines from offset 0x80 to 0xFFF:
+Start: 0x80, which is line 8 (0x80/0x10 = 8)
+End: 0xFFF, which is line 0xFFF/0x10... well, 0xFFF = 4095, 4095/16 = 255.9, so line 255.
+Number of lines: 255 - 8 + 1 = 248 lines.
+Bytes: 248 × 16 = 3968. But we only need from 0x80 to 0x0FF... 
+
+Wait, 0xFFF - 0x80 + 1 = 4095 - 128 + 1 = 3968. And 248 × 16 = 3968. ✓
+
+So:
+- Line 7 (0x70-0x7F): 00 00 00 00 2C 00 00 00 00 00 00 00 00 00 00 00
+
+Wait, I already defined line 7. Let me redo:
+Line 7 (0x70): 
+- 0x70: 2C
+- 0x71: 00
+- 0x72: 00
+- 0x73: 00
+- 0x74: 00
+- 0x75: 00
+- 0x76: 00
+- 0x77: 00
+- 0x78: 00
+- 0x79: 00
+- 0x7A: 00
+- 0x7B: 00
+- 0x7C: 00
+- 0x7D: 00
+- 0x7E: 00
+- 0x7F: 00
+
+So line 7: 2C 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+
+Lines 8 through 255: all 00 (248 lines of 16 zeros each)
+
+Line 256 (0x1000): B9 01 00 00 00 BA 0B 00 00 00 48 8D 3D 10 00 00 00
+Line 257 (0x1010): B8 01 00 00 00 0F 05 B8 3C 00 00 00 31 C0 0F 05
+Line 258 (0x1020): 48 61 6C 6C 6F 20 57 65 6C 74 0A
+
+Total lines: 259.
+
+Hmm, this is going to be a very long output. Let me just write it out. I'll use 16 bytes per line.
+
+Actually, you know what, let me just present the whole thing as a continuous stream of hex bytes with spaces, maybe grouped in manageable chunks. The user will copy it and `printf` it or use `xxd -r` to convert.
+
+Let me write it out carefully, line by line.
+
+Line 0 (0x0000): 7F 45 4C 46 00 00 00 00 01 00 01 00 3C 00 00 00
+Line 1 (0x0010): 01 00 00 00 00 10 00 00 00 00 00 00 40 00 00 00
+Line 2 (0x0020): 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+Line 3 (0x0030): 00 00 00 00 40 00 38 00 01 00 40 00 00 00 00 00
+
+Wait, I made an error. Let me recheck line 3.
+
+ELF header:
+0x00-0x0F: 7F 45 4C 46 00 00 00 00 01 00 01 00 3C 00 00 00
+0x10-0x1F: 01 00 00 00 00 10 00 00 00 00 00 00 40 00 00 00
+0x20-0x2F: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+0x30-0x3F: 00 00 00 00 40 00 38 00 01 00 40 00 00 00 00 00
+
+Let me verify:
+0x30: 00 (e_flags)
+0x31: 00
+0x32: 40 (e_ehsize)
+0x33: 00
+0x34: 38 (e_phentsize)
+0x35: 00
+0x36: 01 (e_phnum)
+0x37: 00
+0x38: 40 (e_shentsize)
+0x39: 00
+0x3A: 00 (e_shnum)
+0x3B: 00
+0x3C: 00 (e_shstrndx)
+0x3D: 00 (padding)
+0x3E: 00 (padding)
+0x3F: 00 (padding)
+
+Yes! Line 3: 00 00 40 00 38 00 01 00 40 00 00 00 00 00 00 00
+
+Wait, I need to double-check. Looking at my earlier byte-by-byte listing:
+0x2C: 00 (e_flags byte0)
+0x2D: 00
+0x2E: 00
+0x2F: 00
+0x30: 40 (e_ehsize byte0)
+0x31: 00
+0x32: 38 (e_phentsize byte0)
+0x33: 00
+0x34: 01 (e_phnum byte0)
+0x35: 00
+0x36: 40 (e_shentsize byte0)
+0x37: 00
+0x38: 00 (e_shnum byte0)
+0x39: 00
+0x3A: 00 (e_shstrndx byte0)
+0x3B: 00
+0x3C: 00
+0x3D: 00
+0x3E: 00
+0x3F: 00
+
+So:
+Line 2 (0x20): 0x20-0x2F = 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+Line 3 (0x30): 0x30-0x3F = 40 00 38 00 01 00 40 00 00 00 00 00 00 00 00 00
+
+And Line 1 (0x10): 0x10-0x1F
+0x10: 01 (e_type byte0)
+0x11: 00
+0x12: 00
+0x13: 00
+0x14: 00 (e_entry byte0)
+0x15: 10
+0x16: 00
+0x17: 00
+0x18: 00 (e_phoff byte0)
+0x19: 40
+0x1A: 00
+0x1B: 00
+0x1C: 00 (e_shoff byte0)
+0x1D: 00
+0x1E: 00
+0x1F: 00
+
+Line 1: 01 00 00 00 00 10 00 00 00 00 00 00 40 00 00 00 ✓
+
+Now Program header lines:
+Line 4 (0x40): 0x40-0x4F
+0x40: 01 00 00 00 00 00 00 00 (p_type)
+0x48: 05 00 00 00 (p_flags)
+0x4C: 00 10 00 00 (first half of p_offset)
+
+Line 4: 01 00 00 00 00 00 00 00 05 00 00 00 00 10 00 00
+
+Line 5 (0x50): 0x50-0x5F
+0x50: 00 00 00 00 (second half of p_offset)
+0x54: 00 10 00 00 (first half of p_vaddr)
+0x58: 00 00 00 00 (first half of p_paddr)
+
+Line 5: 00 00 00 00 00 10 00 00 00 00 00 00 00 00 00 00
+
+Line 6 (0x60): 0x60-0x6F
+0x60: 10 00 00 00 (second half of p_vaddr)
+0x64: 00 10 00 00 (first half of p_paddr)
+0x68: 00 00 00 00 (first half of p_shoff)
+
+Line 6: 10 00 00 00 00 10 00 00 00 00 00 00 00 00 00 00
+
+Line 7 (0x70): 0x70-0x7F
+0x70: 00 00 00 00 (second half of p_paddr)
+0x74: 2C 00 00 00 (p_filesz)
+0x78: 00 00 00 00 (padding + start of file padding)
+0x7C: 00 00 00 00 (padding + more file padding)
+
+Wait:
+0x70: 00 00 00 00 (second half of p_paddr: 0x00001000 bytes 4-7)
+0x74: 00 00 00 00 (second half of p_shoff: 0x00000000 bytes 4-7)
+
+Wait no. Let me redo:
+p_paddr at 0x5C, 8 bytes: 0x5C-0x63 → 00 10 00 00 00 00 00 00
+So 0x5C: 00, 0x5D: 10, 0x5E: 00, 0x5F: 00, 0x60: 00, 0x61: 00, 0x62: 00, 0x63: 00
+
+p_shoff at 0x64, 8 bytes: 0x64-0x6B → 00 00 00 00 00 00 00 00
+So 0x64: 00, 0x65: 00, 0x66: 00, 0x67: 00, 0x68: 00, 0x69: 00, 0x6A: 00, 0x6B: 00
+
+p_filesz at 0x6C, 4 bytes: 0x6C-0x6F → 2C 00 00 00
+So 0x6C: 2C, 0x6D: 00, 0x6E: 00, 0x6F: 00
+
+p_memsz at 0x70, 4 bytes: 0x70-0x73 → 2C 00 00 00
+So 0x70: 2C, 0x71: 00, 0x72: 00, 0x73: 00
+
+padding at 0x74, 4 bytes: 0x74-0x77 → 00 00 00 00
+So 0x74: 00, 0x75: 00, 0x76: 00, 0x77: 00
+
+Then file padding starts at 0x78.
+
+So Line 6 (0x60): 0x60-0x6F
+0x60: 00 (p_paddr byte5)
+0x61: 00 (p_paddr byte6)
+0x62: 00 (p_paddr byte7)
+0x63: 00 (p_paddr byte8)
+0x64: 00 (p_shoff byte0)
+0x65: 00 (p_shoff byte1)
+0x66: 00 (p_shoff byte2)
+0x67: 00 (p_shoff byte3)
+0x68: 00 (p_shoff byte4)
+0x69: 00 (p_shoff byte5)
+0x6A: 00 (p_shoff byte6)
+0x6B: 00 (p_shoff byte7)
+0x6C: 2C (p_filesz byte0)
+0x6D: 00 (p_filesz byte1)
+0x6E: 00 (p_filesz byte2)
+0x6F: 00 (p_filesz byte3)
+
+Line 6: 00 00 00 00 00 00 00 00 00 00 00 00 2C 00 00 00
+
+Line 7 (0x70): 0x70-0x7F
+0x70: 2C (p_memsz byte0)
+0x71: 00 (p_memsz byte1)
+0x72: 00 (p_memsz byte2)
+0x73: 00 (p_memsz byte3)
+0x74: 00 (padding byte0)
+0x75: 00 (padding byte1)
+0x76: 00 (padding byte2)
+0x77: 00 (padding byte3)
+0x78: 00 (file padding)
+0x79: 00 (file padding)
+0x7A: 00 (file padding)
+0x7B: 00 (file padding)
+0x7C: 00 (file padding)
+0x7D: 00 (file padding)
+0x7E: 00 (file padding)
+0x7F: 00 (file padding)
+
+Line 7: 2C 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+
+Lines 8-255: all 00 (248 lines)
+
+Line 256 (0x1000): B9 01 00 00 00 BA 0B 00 00 00 48 8D 3D 10 00 00 00
+Line 257 (0x1010): B8 01 00 00 00 0F 05 B8 3C 00 00 00 31 C0 0F 05
+Line 258 (0x1020): 48 61 6C 6C 6F 20 57 65 6C 74 0A
+
+Let me verify the code one more time:
+At 0x1000:
+- B9 01 00 00 00 (5) → mov rdi, 1
+- BA 0B 00 00 00 (5) → mov rdx, 11
+- 48 8D 3D 10 00 00 00 (7) → lea rsi, [rel +0x10]
+- B8 01 00 00 00 (5) → mov rax, 1
+- 0F 05 (2) → syscall
+- B8 3C 00 00 00 (5) → mov rax, 60
+- 31 C0 (2) → xor edi, edi
+- 0F 05 (2) → syscall
+Total: 33 bytes (0x21). ✓
+
+String at 0x1021:
+- 48 61 6C 6C 6F 20 57 65 6C 74 0A = "Hallo Welt\n" (11 bytes) ✓
+
+Total file: 0x1000 + 0x21 + 0xB = 0x102C = 4140 bytes.
+
+Let me count: 259 lines. Line 0 to 258 = 259 lines.
+Lines 0-3: 4 lines (ELF header)
+Line 4-7: 4 lines (program header)
+Lines 8-255: 248 lines (zeros)
+Lines 256-258: 3 lines (code + string)
+Total: 4 + 4 + 248 + 3 = 259 lines. ✓
+
+Bytes: 259 × 16 = 4144, minus 3 (last line only has 11 bytes) = 4141. Hmm, that's 4141 not 4140.
+
+Wait, 259 lines: first 258 lines have 16 bytes = 4128, last line has 11 bytes. Total = 4128 + 11 = 4139.
+
+Hmm, that's not 4140 either. Let me recount.
+
+0x102C = 4140.
+0x102C / 16 = 258.75. So 258 full lines of 16 + 1 line of 12 bytes.
+
+Wait: 258 × 16 = 4128. 4140 - 4128 = 12. So the last line has 12 bytes.
+
+Let me recount my lines:
+- 0x00 to 0x102B is the entire file (4140 bytes)
+- 0x1020 to 0x102B: 0x102B - 0x1020 + 1 = 12 bytes
+
+So line 258 (0x1020) should have 12 bytes: 48 61 6C 6C 6F 20 57 65 6C 74 0A 00
+
+Wait no, 0x102B - 0x1020 = 0xB = 11, +1 = 12. But the string is only 11 bytes (0x1021 to 0x102B inclusive is 0x102B - 0x1021 + 1 = 0xB = 11). So 0x1020 is part of the code?
+
+Let me recount code: 33 bytes from 0x1000. 0x1000 + 33 - 1 = 0x1020. So the last byte of code is at 0x1020. That's the second `syscall` (0F 05).
+
+Wait:
+0x1000-0x1004: B9 01 00 00 00 (5)
+0x1005-0x1009: BA 0B 00 00 00 (5)
+0x100A-0x1010: 48 8D 3D 10 00 00 00 (7)
+0x1011-0x1015: B8 01 00 00 00 (5)
+0x1016-0x1017: 0F 05 (2)
+0x1018-0x101C: B8 3C 00 00 00 (5)
+0x101D-0x101E: 31 C0 (2)
+0x101F-0x1020: 0F 05 (2)
+
+So code is 0x1000 to 0x1020 (33 bytes).
+String is 0x1021 to 0x102B (11 bytes).
+Total from 0x1000: 44 bytes = 0x2C.
+
+File ends at 0x1000 + 0x2C - 1 = 0x102B.
+Total file size = 0x102C = 4140 bytes. ✓
+
+Line 256 (0x1000-0x100F): B9 01 00 00 00 BA 0B 00 00 00 48 8D 3D 10 00 00 00
+Line 257 (0x1010-0x101F): B8 01 00 00 00 0F 05 B8 3C 00 00 00 31 C0 0F 05
+Line 258 (0x1020-0x102B): 48 61 6C 6C 6F 20 57 65 6C 74 0A
+
+Wait, 0x1020 has the last byte of code: 0F 05. But I put B8 3C 00 00 00 31 C0 0F 05 in line 257.
+
+Let me recheck:
+Line 256 (0x1000-0x100F): 16 bytes
+0x1000: B9
+0x1001: 01
+0x1002: 00
+0x1003: 00
+0x1004: 00
+0x1005: BA
+0x1006: 0B
+0x1007: 00
+0x1008: 00
+0x1009: 00
+0x100A: 48
+0x100B: 8D
+0x100C: 3D
+0x100D: 10
+0x100E: 00
+0x100F: 00
+→ B9 01 00 00 00 BA 0B 00 00 00 48 8D 3D 10 00 00 00 ✓
+
+Line 257 (0x1010-0x101F): 16 bytes
+0x1010: 00
+0x1011: B8
+0x1012: 01
+0x1013: 00
+0x1014: 00
+0x1015: 00
+0x1016: 0F
+0x1017: 05
+0x1018: B8
+0x1019: 3C
+0x101A: 00
+0x101B: 00
+0x101C: 00
+0x101D: 31
+0x101E: C0
+0x101F: 0F
+→ 00 B8 01 00 00 00 0F 05 B8 3C 00 00 00 31 C0 0F ✓
+
+Line 258 (0x1020): 12 bytes (0x1020 to 0x102B)
+0x1020: 05
+0x1021: 48
+0x1022: 61
+0x1023: 6C
+0x1024: 6C
+0x1025: 6F
+0x1026: 20
+0x1027: 57
+0x1028: 65
+0x1029: 6C
+0x102A: 74
+0x102B: 0A
+→ 05 48 61 6C 6C 6F 20 57 65 6C 74 0A ✓
+
+Great, 12 bytes in the last line. Total: 258 × 16 + 12 = 4128 + 12 = 4140 = 0x102C. ✓
+
+Now I need to output 248 lines of 16 zeros (lines 8 through 255). That's a lot but I'll write them all out.
+
+Actually, let me count: lines 8, 9, 10, ..., 255. That's 255 - 8 + 1 = 248 lines.
+
+Each line: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+
+OK let me write the complete output now. I'll present it as the user requested: BEGIN_HEX, then the bytes, then END_HEX.

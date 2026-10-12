@@ -1,0 +1,2 @@
+I'm planning the ELF64 binary layout by hand—a 64-byte header plus a single 56-byte program header, giving code a base at 0x400078, and I'm deciding whether to use a stack buffer for data storage rather than a bss section.
+

@@ -1,0 +1,14 @@
+I'm designing a minimal ELF64 executable for Linux x86-64, laying out the header and program header totaling 120 bytes before the code, then writing syscall instructions to print "Hallo Welt\n" via write and exit cleanly.
+
+I'm calculating the exact byte offsets and virtual addresses for the entry point and message string within the 0x400000 base address.
+
+Now I'm constructing the ELF header byte-by-byte, setting the magic number, 64-bit class, little-endian encoding, executable type, and x86-64 machine identifier.
+
+Continuing with entry point, program header offset, section header fields set to zero, and sizing fields for the header and single program header entry, before moving on to build the PT_LOAD program header.
+
+I'm filling in the segment type, read+execute flags, file offsets, virtual/physical addresses, and size fields, then verifying the total file size comes out to 162 bytes before starting to assemble the raw byte sequence for the ELF header.
+
+Still writing the program header and syscall instructions...
+
+Then I encode the "Hallo Welt\n" message bytes and verify the offsets line up: code starts at 120, message follows right after at 0x400097, matching the virtual address referenced earlier. Everything checks out correctly.
+

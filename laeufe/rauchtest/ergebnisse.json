@@ -1,0 +1,12 @@
+[
+ {
+  "aufgabe": "T1",
+  "modus": "bin_runden",
+  "lauf": 1,
+  "ok": true,
+  "info": "1/1 Tests bestanden",
+  "groesse_byte": 162,
+  "antwort_zeichen": 1513,
+  "runden": 1
+ }
+]

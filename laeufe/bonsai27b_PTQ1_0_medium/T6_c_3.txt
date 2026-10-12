@@ -1,0 +1,26 @@
+BEGIN_C
+#include <stdio.h>
+#include <stdlib.h>
+
+static int cmp(const void *a, const void *b) {
+    return (*(int *)a < *(int *)b) ? -1 : (*(int *)a > *(int *)b) ? 1 : 0;
+}
+
+int main(void) {
+    int arr[100];
+    int n = 0;
+    int x;
+
+    while (n < 100 && scanf("%d", &x) == 1) {
+        arr[n++] = x;
+    }
+
+    qsort(arr, (size_t)n, sizeof(int), cmp);
+
+    for (int i = 0; i < n; i++) {
+        printf("%d\n", arr[i]);
+    }
+
+    return 0;
+}
+END_C

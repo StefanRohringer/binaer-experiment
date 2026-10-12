@@ -1,0 +1,11 @@
+Ein minimales C-Programm, das „Hallo Welt“ mit Zeilenumbruch ausgibt und mit Exit-Code 0 endet. `puts` hängt den Zeilenumbruch automatisch an.
+
+BEGIN_C
+#include <stdio.h>
+
+int main(void)
+{
+    puts("Hallo Welt");
+    return 0;
+}
+END_C

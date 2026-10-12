@@ -1,0 +1,38 @@
+Test 5 reveals the bug: `(0-7)/2` should evaluate to -3 but instead gives 20, suggesting the issue lies in how unary minus or parenthesized expressions are parsed. I'm tracing through the parser functions to find where this goes wrong, starting with the space-skipping and name-parsing routines.
+
+Looking at parse_primary, it checks for '(' first, then checks if the character is a digit by comparing against '9' using jbe -- but I realize this comparison is flawed since '(' (0x28) is numerically less than '9' (0x39), meaning the digit check would also incorrectly match '(' if the order were reversed. Since '(' is checked first and handled separately, this particular ordering works, but I suspect there's a similar off-by-comparison issue elsewhere affecting how negative numbers or parenthesized subtraction get parsed.
+
+Let me trace through `(0-7)/2` to verify parse_expr's behavior after calling parse_term, tracking the stack push that follows.
+
+Tracing further, this section calls skipspaces, then checks the current character for '+' or '-' to decide whether to continue accumulating terms or return, incrementing the pointer and recursing into parse_term before adding the results together.
+
+Now the real bug surfaces: `(0-7)/2` evaluates to 20 instead of -3, so I need to trace what parse_primary does with the parenthesized subexpression.
+
+I see it traces into parse_primary at 0x1b9, which skips the '(', calls parse_expr to get -7, then calls skipspaces before skipping the ')'. But skipspaces loads a byte into eax, which clobbers the return value from parse_expr -- that's likely overwriting the -7 result before it gets used.
+
+So the bug is confirmed: skipspaces reads the ')' character itself into rax (41), and since parse_primary returns right after without restoring rax, 41 gets used downstream instead of -7, matching the division discrepancy I noticed (41/2=20). The fix would be to preserve rax across that skipspaces call rather than letting it leak the character value as the return.
+
+Since r15 already points at ')', I can just drop the redundant skipspaces call entirely. Rather than reshuffling bytes, I'll overwrite that call instruction with nops to preserve rax, then keep the inc r15 to step past the closing paren.
+
+Now I need to locate the file offset corresponding to that virtual address, mapping from the entry point at 0x400078 to the file position 0x78.
+
+I'm scanning the hex dump for the five-byte call instruction so I can overwrite it with NOP bytes.
+
+Still searching through the hex dump for that matching byte sequence...
+
+Still tracing the machine code...
+
+Still decoding assembly bytes...
+
+Still writing machine code...
+
+Found the target bytes to patch: I need to replace a call instruction `E8 6A FF FF FF` with five NOP bytes `90 90 90 90 90` to neutralize that function call.
+
+Now I'm tracing through main's control flow to verify other functions like parse_name and find_var are working correctly, checking the loop logic for skipping spaces, detecting newlines, and handling empty lines before the print statement is parsed.
+
+Thinking through the "print x" case: parse_name reads the lowercase letters "print" and packs it into rbx, then skips spaces to reach "x". Since the next character isn't '=', control jumps to call parse_expr, meaning this is being treated as a print statement rather than an assignment.
+
+Checking parse_term, I confirm it correctly pushes rax before calling skipspaces, so no clobber issue there, and parse_expr follows the same safe pattern. That leaves only the one rax clobber bug to fix, so I just need to produce the corrected hex with those 5 bytes changed.
+
+I need to replace a call instruction with no-op padding bytes at that spot in the hex. Now let me write out the complete fixed file.
+

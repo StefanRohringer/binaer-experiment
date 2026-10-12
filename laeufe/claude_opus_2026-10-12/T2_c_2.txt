@@ -1,0 +1,12 @@
+BEGIN_C
+#include <stdio.h>
+
+int main(void)
+{
+    volatile long a = 12345;
+    volatile long b = 6789;
+    long result = a * b;
+    printf("%ld\n", result);
+    return 0;
+}
+END_C

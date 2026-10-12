@@ -1,0 +1,37 @@
+Das Programm ist eine minimale ELF64-Datei mit 162 Bytes (0xA2). Sie besteht aus dem ELF-Header, einem einzigen Program-Header, dem Maschinencode und dem Text.
+
+**Aufbau der Datei**
+
+| Offset | Größe | Inhalt |
+|---|---|---|
+| 0x00 | 64 | ELF-Header: ELF64, Little Endian, ausführbare Datei (`ET_EXEC`), x86-64, Einsprung bei 0x400078 |
+| 0x40 | 56 | Program-Header: ein ladbares Segment (`PT_LOAD`), lesbar und ausführbar, ganze Datei ab Adresse 0x400000 |
+| 0x78 | 31 | Maschinencode |
+| 0x97 | 11 | Text `"Hallo Welt\n"` |
+
+**Maschinencode**
+
+| Bytes | Befehl | Bedeutung |
+|---|---|---|
+| `B8 01 00 00 00` | `mov eax, 1` | Systemaufruf `write` |
+| `BF 01 00 00 00` | `mov edi, 1` | Ziel ist stdout |
+| `BE 97 00 40 00` | `mov esi, 0x400097` | Adresse des Textes |
+| `BA 0B 00 00 00` | `mov edx, 11` | Länge des Textes |
+| `0F 05` | `syscall` | Text ausgeben |
+| `B8 3C 00 00 00` | `mov eax, 60` | Systemaufruf `exit` |
+| `31 FF` | `xor edi, edi` | Exit-Code 0 |
+| `0F 05` | `syscall` | Programm beenden |
+
+BEGIN_HEX
+7F 45 4C 46 02 01 01 00 00 00 00 00 00 00 00 00
+02 00 3E 00 01 00 00 00 78 00 40 00 00 00 00 00
+40 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+00 00 00 00 40 00 38 00 01 00 40 00 00 00 00 00
+01 00 00 00 05 00 00 00 00 00 00 00 00 00 00 00
+00 00 40 00 00 00 00 00 00 00 40 00 00 00 00 00
+A2 00 00 00 00 00 00 00 A2 00 00 00 00 00 00 00
+00 10 00 00 00 00 00 00
+B8 01 00 00 00 BF 01 00 00 00 BE 97 00 40 00 BA
+0B 00 00 00 0F 05 B8 3C 00 00 00 31 FF 0F 05
+48 61 6C 6C 6F 20 57 65 6C 74 0A
+END_HEX

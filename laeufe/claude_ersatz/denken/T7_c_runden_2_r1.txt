@@ -1,0 +1,2 @@
+I'll write a simple recursive descent parser reading input with fgets into a 512-byte buffer, handling unary plus/minus in the factor rule, and relying on C's truncating division since numbers are non-negative and intermediate values fit safely.
+

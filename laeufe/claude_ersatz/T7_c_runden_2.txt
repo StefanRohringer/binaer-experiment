@@ -1,0 +1,98 @@
+Das Programm ist ein rekursiver Abstiegsparser mit drei Ebenen:
+
+- **`expr`** behandelt Summen und Differenzen.
+- **`term`** behandelt Produkte und Quotienten. Dadurch gilt Punkt vor Strich.
+- **`factor`** behandelt Zahlen und geklammerte Ausdrücke.
+
+Die Schleifen in `expr` und `term` werten gleichrangige Operatoren von links nach rechts aus. Die Division `/` in C schneidet bei `long long` bereits Richtung null ab. Unäre Vorzeichen sind laut Aufgabe nicht nötig, werden aber vorsichtshalber trotzdem akzeptiert.
+
+BEGIN_C
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+static const char *p;
+
+static void skip(void) {
+    while (*p == ' ' || *p == '\t' || *p == '\r') p++;
+}
+
+static long long expr(void);
+
+static long long factor(void) {
+    skip();
+    if (*p == '(') {
+        p++;
+        long long v = expr();
+        skip();
+        if (*p == ')') p++;
+        return v;
+    }
+    if (*p == '-') {
+        p++;
+        long long v = factor();
+        return (long long)(0ULL - (unsigned long long)v);
+    }
+    if (*p == '+') {
+        p++;
+        return factor();
+    }
+    unsigned long long v = 0;
+    while (*p >= '0' && *p <= '9') {
+        v = v * 10 + (unsigned long long)(*p - '0');
+        p++;
+    }
+    return (long long)v;
+}
+
+static long long term(void) {
+    long long v = factor();
+    for (;;) {
+        skip();
+        if (*p == '*') {
+            p++;
+            long long r = factor();
+            v = (long long)((unsigned long long)v * (unsigned long long)r);
+        } else if (*p == '/') {
+            p++;
+            long long r = factor();
+            if (r != 0) v = v / r;
+        } else {
+            break;
+        }
+    }
+    return v;
+}
+
+static long long expr(void) {
+    long long v = term();
+    for (;;) {
+        skip();
+        if (*p == '+') {
+            p++;
+            long long r = term();
+            v = (long long)((unsigned long long)v + (unsigned long long)r);
+        } else if (*p == '-') {
+            p++;
+            long long r = term();
+            v = (long long)((unsigned long long)v - (unsigned long long)r);
+        } else {
+            break;
+        }
+    }
+    return v;
+}
+
+int main(void) {
+    char buf[1024];
+    if (!fgets(buf, sizeof buf, stdin)) {
+        buf[0] = '\0';
+    }
+    size_t n = strlen(buf);
+    while (n > 0 && (buf[n-1] == '\n' || buf[n-1] == '\r')) buf[--n] = '\0';
+    p = buf;
+    long long v = expr();
+    printf("%lld\n", v);
+    return 0;
+}
+END_C

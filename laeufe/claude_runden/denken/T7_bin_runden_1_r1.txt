@@ -1,0 +1,4 @@
+I'm laying out the ELF64 binary by hand—designing the header and single program header so code starts right after, loading it RWX at a fixed address, and planning to use stack space for the read buffer rather than a separate section.
+
+I'm sketching a recursive descent parser using a dedicated register as the character cursor, with a peek helper that skips whitespace, and expr/term/factor functions that handle addition, subtraction, multiplication, and division by pushing intermediate results and combining them after recursive calls.
+

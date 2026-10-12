@@ -1,0 +1,4 @@
+I'm laying out a minimal ELF64 executable by hand, placing the header, single program header, and raw machine code for a syscall-based write-and-exit sequence directly into the file at fixed offsets.
+
+Filling in the remaining header fields and program header, then verifying the byte counts line up: 64 bytes for the ELF header and 56 for the program header, both matching expectations.
+

@@ -1,0 +1,281 @@
+[
+ {
+  "aufgabe": "T1",
+  "modus": "bin",
+  "lauf": 1,
+  "ok": true,
+  "info": "1/1 Tests bestanden",
+  "groesse_byte": 162,
+  "antwort_zeichen": 504
+ },
+ {
+  "aufgabe": "T1",
+  "modus": "bin",
+  "lauf": 2,
+  "ok": true,
+  "info": "1/1 Tests bestanden",
+  "groesse_byte": 162,
+  "antwort_zeichen": 504
+ },
+ {
+  "aufgabe": "T1",
+  "modus": "bin",
+  "lauf": 3,
+  "ok": true,
+  "info": "1/1 Tests bestanden",
+  "groesse_byte": 164,
+  "antwort_zeichen": 510
+ },
+ {
+  "aufgabe": "T1",
+  "modus": "c",
+  "lauf": 1,
+  "ok": true,
+  "info": "1/1 Tests bestanden",
+  "groesse_byte": 15960,
+  "antwort_zeichen": 95
+ },
+ {
+  "aufgabe": "T1",
+  "modus": "c",
+  "lauf": 2,
+  "ok": true,
+  "info": "1/1 Tests bestanden",
+  "groesse_byte": 15960,
+  "antwort_zeichen": 95
+ },
+ {
+  "aufgabe": "T1",
+  "modus": "c",
+  "lauf": 3,
+  "ok": true,
+  "info": "1/1 Tests bestanden",
+  "groesse_byte": 15960,
+  "antwort_zeichen": 95
+ },
+ {
+  "aufgabe": "T2",
+  "modus": "bin",
+  "lauf": 1,
+  "ok": true,
+  "info": "1/1 Tests bestanden",
+  "groesse_byte": 190,
+  "antwort_zeichen": 588
+ },
+ {
+  "aufgabe": "T2",
+  "modus": "bin",
+  "lauf": 2,
+  "ok": true,
+  "info": "1/1 Tests bestanden",
+  "groesse_byte": 190,
+  "antwort_zeichen": 588
+ },
+ {
+  "aufgabe": "T2",
+  "modus": "bin",
+  "lauf": 3,
+  "ok": true,
+  "info": "1/1 Tests bestanden",
+  "groesse_byte": 211,
+  "antwort_zeichen": 651
+ },
+ {
+  "aufgabe": "T2",
+  "modus": "c",
+  "lauf": 1,
+  "ok": true,
+  "info": "1/1 Tests bestanden",
+  "groesse_byte": 15968,
+  "antwort_zeichen": 178
+ },
+ {
+  "aufgabe": "T2",
+  "modus": "c",
+  "lauf": 2,
+  "ok": true,
+  "info": "1/1 Tests bestanden",
+  "groesse_byte": 15968,
+  "antwort_zeichen": 178
+ },
+ {
+  "aufgabe": "T2",
+  "modus": "c",
+  "lauf": 3,
+  "ok": true,
+  "info": "1/1 Tests bestanden",
+  "groesse_byte": 15968,
+  "antwort_zeichen": 178
+ },
+ {
+  "aufgabe": "T3",
+  "modus": "bin",
+  "lauf": 1,
+  "ok": true,
+  "info": "1/1 Tests bestanden",
+  "groesse_byte": 309,
+  "antwort_zeichen": 945
+ },
+ {
+  "aufgabe": "T3",
+  "modus": "c",
+  "lauf": 1,
+  "ok": true,
+  "info": "1/1 Tests bestanden",
+  "groesse_byte": 16008,
+  "antwort_zeichen": 337
+ },
+ {
+  "aufgabe": "T3",
+  "modus": "c",
+  "lauf": 2,
+  "ok": true,
+  "info": "1/1 Tests bestanden",
+  "groesse_byte": 16008,
+  "antwort_zeichen": 337
+ },
+ {
+  "aufgabe": "T3",
+  "modus": "c",
+  "lauf": 3,
+  "ok": true,
+  "info": "1/1 Tests bestanden",
+  "groesse_byte": 16008,
+  "antwort_zeichen": 337
+ },
+ {
+  "aufgabe": "T4",
+  "modus": "bin",
+  "lauf": 1,
+  "ok": true,
+  "info": "3/3 Tests bestanden",
+  "groesse_byte": 213,
+  "antwort_zeichen": 657
+ },
+ {
+  "aufgabe": "T4",
+  "modus": "bin",
+  "lauf": 2,
+  "ok": true,
+  "info": "3/3 Tests bestanden",
+  "groesse_byte": 222,
+  "antwort_zeichen": 684
+ },
+ {
+  "aufgabe": "T4",
+  "modus": "bin",
+  "lauf": 3,
+  "ok": true,
+  "info": "3/3 Tests bestanden",
+  "groesse_byte": 233,
+  "antwort_zeichen": 717
+ },
+ {
+  "aufgabe": "T4",
+  "modus": "c",
+  "lauf": 1,
+  "ok": true,
+  "info": "3/3 Tests bestanden",
+  "groesse_byte": 16224,
+  "antwort_zeichen": 487
+ },
+ {
+  "aufgabe": "T4",
+  "modus": "c",
+  "lauf": 2,
+  "ok": true,
+  "info": "3/3 Tests bestanden",
+  "groesse_byte": 16224,
+  "antwort_zeichen": 487
+ },
+ {
+  "aufgabe": "T4",
+  "modus": "c",
+  "lauf": 3,
+  "ok": true,
+  "info": "3/3 Tests bestanden",
+  "groesse_byte": 16272,
+  "antwort_zeichen": 538
+ },
+ {
+  "aufgabe": "T5",
+  "modus": "bin",
+  "lauf": 1,
+  "ok": true,
+  "info": "4/4 Tests bestanden",
+  "groesse_byte": 239,
+  "antwort_zeichen": 735
+ },
+ {
+  "aufgabe": "T5",
+  "modus": "bin",
+  "lauf": 2,
+  "ok": true,
+  "info": "4/4 Tests bestanden",
+  "groesse_byte": 246,
+  "antwort_zeichen": 756
+ },
+ {
+  "aufgabe": "T5",
+  "modus": "bin",
+  "lauf": 3,
+  "ok": true,
+  "info": "4/4 Tests bestanden",
+  "groesse_byte": 243,
+  "antwort_zeichen": 747
+ },
+ {
+  "aufgabe": "T5",
+  "modus": "c",
+  "lauf": 1,
+  "ok": true,
+  "info": "4/4 Tests bestanden",
+  "groesse_byte": 16328,
+  "antwort_zeichen": 685
+ },
+ {
+  "aufgabe": "T5",
+  "modus": "c",
+  "lauf": 2,
+  "ok": true,
+  "info": "4/4 Tests bestanden",
+  "groesse_byte": 16328,
+  "antwort_zeichen": 688
+ },
+ {
+  "aufgabe": "T5",
+  "modus": "c",
+  "lauf": 3,
+  "ok": true,
+  "info": "4/4 Tests bestanden",
+  "groesse_byte": 16328,
+  "antwort_zeichen": 688
+ },
+ {
+  "aufgabe": "T6",
+  "modus": "c",
+  "lauf": 1,
+  "ok": true,
+  "info": "4/4 Tests bestanden",
+  "groesse_byte": 16136,
+  "antwort_zeichen": 461
+ },
+ {
+  "aufgabe": "T6",
+  "modus": "c",
+  "lauf": 2,
+  "ok": true,
+  "info": "4/4 Tests bestanden",
+  "groesse_byte": 16136,
+  "antwort_zeichen": 444
+ },
+ {
+  "aufgabe": "T6",
+  "modus": "c",
+  "lauf": 3,
+  "ok": true,
+  "info": "4/4 Tests bestanden",
+  "groesse_byte": 16136,
+  "antwort_zeichen": 460
+ }
+]

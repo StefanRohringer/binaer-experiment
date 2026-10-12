@@ -1,0 +1,40 @@
+BEGIN_C
+#include <stdio.h>
+#include <stdlib.h>
+#include <sys/stat.h>
+
+int main(int argc, char *argv[]) {
+    if (argc != 2) {
+        fprintf(stderr, "Usage: %s <file>\n", argv[0]);
+        return 1;
+    }
+
+    const char *path = argv[1];
+    struct stat st;
+    if (stat(path, &st) != 0) {
+        perror(path);
+        return 1;
+    }
+    if (st.st_size > 1024 * 1024) {
+        fprintf(stderr, "File exceeds 1 MB\n");
+        return 1;
+    }
+
+    FILE *fp = fopen(path, "rb");
+    if (fp == NULL) {
+        perror(path);
+        return 1;
+    }
+
+    long count = 0;
+    int c;
+    while ((c = fgetc(fp)) != EOF) {
+        if (c == '\n')
+            count++;
+    }
+
+    fclose(fp);
+    printf("%ld\n", count);
+    return 0;
+}
+END_C

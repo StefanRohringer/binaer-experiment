@@ -1,0 +1,43 @@
+```c
+#include <stdio.h>
+
+int main(int argc, char *argv[])
+{
+    if (argc < 2) return 0;
+
+    FILE *f = fopen(argv[1], "rb");
+    if (!f) return 0;
+
+    long count = 0;
+    int c;
+    while ((c = fgetc(f)) != EOF) {
+        if (c == '\n') count++;
+    }
+    fclose(f);
+
+    printf("%ld\n", count);
+    return 0;
+}
+```
+
+BEGIN_C
+#include <stdio.h>
+
+int main(int argc, char *argv[])
+{
+    if (argc < 2) return 0;
+
+    FILE *f = fopen(argv[1], "rb");
+    if (!f) return 0;
+
+    long count = 0;
+    int c;
+    while ((c = fgetc(f)) != EOF) {
+        if (c == '\n') count++;
+    }
+    fclose(f);
+
+    printf("%ld\n", count);
+    return 0;
+}
+END_C

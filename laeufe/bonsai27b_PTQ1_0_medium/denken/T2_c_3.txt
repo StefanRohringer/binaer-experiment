@@ -1,0 +1,38 @@
+The user wants a complete C program for Linux that:
+1. Computes 12345 * 6789 at runtime
+2. Prints the result as a decimal number followed by a newline to stdout
+3. Exits with code 0
+4. Compiled with "gcc -O2"
+5. Can use the standard C library
+
+The result of 12345 * 6789 = 83,817,205
+
+I need to output the program between BEGIN_C and END_C markers.
+
+Let me write a simple C program:
+
+```c
+#include <stdio.h>
+
+int main(void) {
+    long long result = 12345 * 6789;
+    printf("%lld\n", result);
+    return 0;
+}
+```
+
+Wait, 12345 * 6789 = 83,817,205. This fits in a regular int (max ~2.1 billion). But let me use `long long` to be safe, or just `int`. Actually, int should be fine since 83,817,205 < 2,147,483,647. Let me just use `int` and `%d`, or use `long long` and `%lld` for extra safety. Either works.
+
+Let me keep it simple with int:
+
+```c
+#include <stdio.h>
+
+int main(void) {
+    int result = 12345 * 6789;
+    printf("%d\n", result);
+    return 0;
+}
+```
+
+This is clean, simple, and correct.

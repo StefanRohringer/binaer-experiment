@@ -1,0 +1,61 @@
+I need to construct the ELF64 binary manually, starting with the 64-byte ELF header followed by the program header.
+
+
+I'm planning to hand-assemble an ELF64 executable: read a line from stdin into a buffer, strip the newline, reverse it, print it with a trailing newline, then exit cleanly using raw syscalls.
+
+I'll keep the layout simple by using a single RWX load segment holding both code and buffer space, and I'm working out the exact vaddr offsets for the ELF header, program header, and code start.
+
+Placing the input and output buffers at fixed addresses right after the code, and I'm deciding whether to reverse bytes in place or copy into a separate output buffer before writing it back out.
+
+Placing inbuf at 0x401000 and outbuf at 0x401100, both landing in the zero-filled region beyond filesz since memsz extends to 0x2000. Now I'm writing the syscall sequence to read 200 bytes from stdin into inbuf.
+
+Still writing assembly logic...
+
+Writing the reverse loop, then appending a newline and issuing the write syscall with outbuf and length+1.
+
+I realize I need to track len more carefully since rdx gets reused -- I should preserve the length in a separate register like r8 before calling write, then follow with the exit(0) syscall. Let me recheck the offset math for stripping a trailing newline from the input buffer before reversing.
+
+Working out the exact opcode bytes for that comparison instruction, calculating the ModRM and SIB bytes to encode the memory operand with its displacement and immediate correctly.
+
+No REX needed since rax and rsi are low registers in 64-bit addressing mode, and the operand size is byte. Now I'm working out the jne branch that skips the trailing-newline decrement: jne needs to jump 3 bytes to clear the dec rax instruction (REX.W FF /1), so I'm encoding it as 75 03 followed by 48 FF C8, then moving on to saving the length into r8.
+
+Encoding the length save as mov r8, rax, then computing a pointer to the end of the buffer for a reverse operation using lea with rsi plus rax minus one, working through the SIB byte encoding for that addressing mode.
+
+Setting the output buffer address into rdi, then copying the length into rcx to use as a loop counter.
+
+Writing reverse loop bytes...
+
+Continuing with the remaining instructions, I'm encoding dec rsi, inc rdi, dec rcx, and the backward jmp to reverse_loop, then tallying the byte sizes of each instruction in the loop to compute the total offset needed for the jump's relative displacement.
+
+I'm computing the exact relative offsets for the jz and jmp instructions by tracking cumulative byte positions through the loop body, arriving at EB EC for the backward jump and 0x0F for the jz's forward displacement to the loop's exit.
+
+Now I'm writing the final write-byte instruction after the loop, then setting up the syscall registers for the write(1, buf, len+1) call, using lea to compute length+1 into rdx and encoding each register load with its opcode and immediate value.
+
+Then I'm encoding the exit syscall (rax=60, edi=0), followed by the program's _start section, which zeroes registers and issues a read syscall from stdin into a 200-byte buffer before continuing with the main logic.
+
+After the syscall, I check if the last byte read is a newline and decrement the count if needed, then compute rsi as a pointer to the last character and set up registers for the following loop using the computed length.
+
+I trace through edge cases: empty line produces just a newline output, and a final line lacking a trailing newline still gets reversed correctly with a newline appended. Now I'm assembling the full byte sequence for the code to verify total length.
+
+Writing the byte-reversal loop that copies characters backward into the output buffer, then appends a newline and issues a write syscall to stdout.
+
+Now I'm double-checking the jump offsets for the loop body, confirming the test/jz/jmp encodings line up correctly, then tallying up the total byte count for each instruction to verify the overall program length.
+
+Adding up all the instruction sizes gives 95 bytes of code, which starting at file offset 120 (vaddr 0x400078, my entry point) means the total file size should be 120 plus 95 bytes.
+
+I need memsz to be large enough to cover the input and output buffers at 0x401000 and 0x401100, so I'm setting it to 0x2000 — the bytes beyond the actual file content will be zero-filled automatically, which works fine since those buffer addresses are well past my 215-byte filesz. I'll mark the segment as RWX so I can write to those buffers, and I'm checking that both the file offset and vaddr satisfy the required page alignment of 0x1000.
+
+Now I'm constructing the raw ELF header byte-by-byte: the magic bytes identifying it as a 64-bit, little-endian ELF executable, followed by the type (ET_EXEC), machine (x86-64), version, and entry point address 0x400078.
+
+Still computing header fields and offsets, confirming total header size of 120 bytes so the code segment starts correctly, then beginning to lay out the full byte sequence for the ELF header.
+
+Still mapping out the byte offsets...
+
+Still disassembling the machine code...
+
+I'm verifying the filesz value matches 0xD7, and confirming the entry point at 0x400078 correctly maps into the file offset 120 within the mapped segment. I'm also checking that the extra memsz page beyond the file data gets zero-filled and remains writable, which is needed for the code to work correctly.
+
+Now I'm double-checking the instruction encodings for moving the addresses 0x401000 and 0x401100 into registers, confirming the little-endian byte ordering matches, and verifying the immediate value 200 (0xC8) is encoded correctly.
+
+I also verify the lea instruction computing rsi+rax-1 decodes properly with its ModRM and SIB bytes, and trace through the loop's jump offset to confirm the jz lands exactly on the correct instruction after the mov byte op. Everything checks out, so I'm ready to assemble the final hex dump.
+

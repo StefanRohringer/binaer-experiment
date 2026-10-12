@@ -1,0 +1,35 @@
+The user wants a complete C program for Linux that:
+1. Computes 12345 * 6789 at runtime
+2. Prints the result as a decimal number followed by a newline to stdout
+3. Exits with code 0
+4. Compiled with gcc -O2
+5. Only standard C library allowed
+
+They want the answer formatted with BEGIN_C and END_C delimiters around the C source code.
+
+Let me write a simple C program:
+
+```c
+#include <stdio.h>
+
+int main(void) {
+    int result = 12345 * 6789;
+    printf("%d\n", result);
+    return 0;
+}
+```
+
+12345 * 6789 = 83,818,305. Let me verify: 12345 * 6789 = 12345 * 6000 + 12345 * 700 + 12345 * 80 + 12345 * 9 = 74070000 + 8641500 + 987600 + 111105 = 83,810,205... wait let me recalculate.
+
+12345 * 6789:
+- 12345 * 6000 = 74,070,000
+- 12345 * 700 = 8,641,500
+- 12345 * 80 = 987,600
+- 12345 * 9 = 111,105
+- Total: 74,070,000 + 8,641,500 = 82,711,500
+- 82,711,500 + 987,600 = 83,699,100
+- 83,699,100 + 111,105 = 83,810,205
+
+So the result is 83,810,205. But the program computes it at runtime, so I don't need to hardcode it. The program just multiplies and prints.
+
+The program is straightforward. Let me format the answer properly.

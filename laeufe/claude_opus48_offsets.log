@@ -1,0 +1,9 @@
+nohup: Eingabe wird ignoriert
+4 Anfragen, 4 gleichzeitig
+T7_bin_offsets_runden_1 Runde 1: Test 2: falsche Ausgabe b'77\n'  334.1 s, 31281 Tokens
+T7_bin_offsets_runden_2 Runde 1: OK  360.7 s, 32968 Tokens
+T8_bin_offsets_runden_2 Runde 1: Test 5: falsche Ausgabe b'-3\n-1\n2\n-3\n-3\n-1\n2\n-3\n'  608.0 s, 56240 Tokens
+T8_bin_offsets_runden_1 Runde 1: OK  681.7 s, 61092 Tokens
+T8_bin_offsets_runden_2 Runde 2: OK  123.4 s, 10287 Tokens
+T7_bin_offsets_runden_1 Runde 2: keine Abgabe/Markierung  875.2 s, 64000 Tokens  ABGESCHNITTEN (max_tokens)
+T7_bin_offsets_runden_1 Runde 3: OK  324.3 s, 29400 Tokens

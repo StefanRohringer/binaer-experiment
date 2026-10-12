@@ -1,0 +1,56 @@
+# Analyse
+
+Ich habe ein ELF64-Programm von Hand in Maschinencode erstellt. Es besteht aus:
+
+- **ELF-Header** (64 B) + **ein PT_LOAD-Segment** (RWX, geladen bei `0x400000`, mit BSS für Puffer bei `0x401000`)
+- **`_start`**: liest eine Zeile von stdin in Puffer (`0x401008`), setzt Cursor, ruft Parser, gibt Zahl aus, Exit 0
+- **Rekursiver Abstiegsparser**: `parseExpr` (`+ -`), `parseTerm` (`* /`), `parseFactor` (Klammern/Zahl), `parse_number`, `skip_spaces`
+- `/` nutzt `idiv` (trunkiert Richtung null, wie gefordert)
+- **`print_number`**: Vorzeichenbehandlung + dezimale Ausgabe rückwärts, dann `write` mit Zeilenumbruch
+
+Der Cursor liegt in `0x401000`, Eingabepuffer ab `0x401008`, Ausgabepuffer ab `0x401200` (keine Überlappung). Zwischenwerte sind 64-bit signed (`rax`), Operator-Assoziativität links→rechts durch die Schleifenstruktur.
+
+BEGIN_HEX
+7F 45 4C 46 02 01 01 00 00 00 00 00 00 00 00 00
+02 00 3E 00 01 00 00 00 78 00 40 00 00 00 00 00
+40 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+00 00 00 00 40 00 38 00 01 00 00 00 00 00 00 00
+01 00 00 00 07 00 00 00 00 00 00 00 00 00 00 00
+00 00 40 00 00 00 00 00 00 00 40 00 00 00 00 00
+65 02 00 00 00 00 00 00 00 20 00 00 00 00 00 00
+00 10 00 00 00 00 00 00
+31 FF BE 08 10 40 00 BA C8 00 00 00 31 C0 0F 05
+48 01 C6 C6 06 00 48 C7 04 25 00 10 40 00 08 10
+40 00 E8 0E 00 00 00 E8 5E 01 00 00 B8 3C 00 00
+00 31 FF 0F 05
+E8 54 00 00 00 E8 22 01 00 00 48 8B 14 25 00 10
+40 00 0F B6 0A 80 F9 2B 0F 84 0A 00 00 00 80 F9
+2D 0F 84 18 00 00 00 C3 48 FF 04 25 00 10 40 00
+50 E8 23 00 00 00 5A 48 01 D0 E9 C6 FF FF FF 48
+FF 04 25 00 10 40 00 50 E8 0C 00 00 00 5A 48 29
+C2 48 89 D0 E9 AC FF FF FF
+E8 57 00 00 00 E8 C9 00 00 00 48 8B 14 25 00 10
+40 00 0F B6 0A 80 F9 2A 0F 84 0A 00 00 00 80 F9
+2F 0F 84 19 00 00 00 C3 48 FF 04 25 00 10 40 00
+50 E8 26 00 00 00 5A 48 0F AF C2 E9 C5 FF FF FF
+48 FF 04 25 00 10 40 00 50 E8 0E 00 00 00 48 89
+C1 58 48 99 48 F7 F9 E9 A9 FF FF FF
+E8 72 00 00 00 48 8B 14 25 00 10 40 00 0F B6 0A
+80 F9 28 0F 84 06 00 00 00 E8 1C 00 00 00 C3 48
+FF 04 25 00 10 40 00 E8 1F FF FF FF E8 46 00 00
+00 48 FF 04 25 00 10 40 00 C3
+31 C0 48 8B 14 25 00 10 40 00 0F B6 0A 80 F9 30
+0F 82 26 00 00 00 80 F9 39 0F 87 1D 00 00 00 48
+6B C0 0A 80 E9 30 0F B6 C9 48 01 C8 48 FF C2 48
+89 14 25 00 10 40 00 E9 C6 FF FF FF C3
+50 51 48 8B 04 25 00 10 40 00 0F B6 08 80 F9 20
+0F 85 08 00 00 00 48 FF C0 E9 EC FF FF FF 48 89
+04 25 00 10 40 00 59 58 C3
+41 B8 1F 12 40 00 41 C6 00 0A 45 31 C9 48 85 C0
+0F 89 09 00 00 00 41 B9 01 00 00 00 48 F7 D8 B9
+0A 00 00 00 31 D2 48 F7 F1 80 C2 30 49 FF C8 41
+88 10 48 85 C0 0F 85 E9 FF FF FF 4D 85 C9 0F 84
+07 00 00 00 49 FF C8 41 C6 00 2D 4C 89 C6 BA 20
+12 40 00 4C 29 C2 BF 01 00 00 00 B8 01 00 00 00
+0F 05 C3
+END_HEX

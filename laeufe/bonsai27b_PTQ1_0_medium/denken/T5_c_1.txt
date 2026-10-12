@@ -1,0 +1,84 @@
+The user wants a complete C program for Linux that:
+1. Takes a file path as the first command line argument
+2. Opens the file (max 1 MB)
+3. Counts newline characters (\n) in it
+4. Prints the count as a decimal number followed by a newline to stdout
+5. Exit code 0
+
+Compilation: gcc -O2
+Standard C library is allowed.
+
+Let me write this:
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#include <sys/stat.h>
+
+int main(int argc, char *argv[]) {
+    if (argc != 2) {
+        fprintf(stderr, "Usage: %s <file>\n", argv[0]);
+        return 1;
+    }
+    
+    FILE *f = fopen(argv[1], "rb");
+    if (!f) {
+        perror(argv[1]);
+        return 1;
+    }
+    
+    long count = 0;
+    int c;
+    while ((c = fgetc(f)) != EOF) {
+        if (c == '\n') count++;
+    }
+    
+    fclose(f);
+    printf("%ld\n", count);
+    return 0;
+}
+```
+
+Wait, let me think about whether I need the sys/stat.h. The task says "höchstens 1 MB" (at most 1 MB). This is a constraint on the file size - I don't think I need to explicitly enforce it, it's just describing the problem domain. I don't need to check the file size. Let me keep it simple.
+
+Actually, using fgetc in a loop for 1 MB is fine. But I could also use fread for better performance. Let me use fread for efficiency, especially since we're compiling with -O2.
+
+```c
+#include <stdio.h>
+
+int main(int argc, char *argv[]) {
+    if (argc != 2) {
+        fprintf(stderr, "Usage: %s <file>\n", argv[0]);
+        return 1;
+    }
+    
+    FILE *f = fopen(argv[1], "rb");
+    if (!f) {
+        perror(argv[1]);
+        return 1;
+    }
+    
+    long count = 0;
+    int buf[65536];
+    size_t n;
+    while ((n = fread(buf, 1, sizeof(buf), f)) > 0) {
+        for (size_t i = 0; i < n; i++) {
+            if (buf[i] == '\n') count++;
+        }
+    }
+    
+    fclose(f);
+    printf("%ld\n", count);
+    return 0;
+}
+```
+
+This is clean, efficient, and correct. The "at most 1 MB" is just the problem constraint, not something I need to enforce.
+
+Let me make sure:
+- Takes file path as argv[1] ✓
+- Opens in binary mode ✓
+- Counts '\n' characters ✓
+- Prints decimal number + newline to stdout ✓
+- Exit code 0 on success ✓
+- Only uses standard C library ✓

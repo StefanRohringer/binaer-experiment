@@ -1,0 +1,52 @@
+I need to hand-craft an ELF64 executable: read a line from stdin, strip the trailing newline if present, reverse the remaining bytes, print them followed by a newline, then exit cleanly.
+
+I'll use a single program header loading the whole file into one RWX segment at vaddr 0x400000, with the ELF header and program header taking 120 bytes before the code starts. I'll place a writable buffer in that same segment (using extra memsz beyond filesz for BSS) so read/write syscalls have somewhere to work, using the standard syscall numbers for read, write, and exit.
+
+Writing read/reverse syscall code...
+
+Writing newline-stripping logic...
+
+Finishing the swap-based reversal loop, then appending a newline after the reversed buffer and writing it out via syscall before exiting cleanly with exit code 0. Now I need to translate all these assembly instructions into actual machine code bytes.
+
+Computing the buffer address based on load base 0x400000 and laying out the entry point at file offset 0x78, then encoding each instruction's opcode bytes precisely—zeroing registers, loading the syscall arguments, and invoking read before checking the return value.
+
+Still writing machine code bytes...
+
+Still encoding instructions...
+
+Encoding instruction 17 fully as 42 8A 04 06 with REX.X enabling r8 as SIB index, then working out instruction 18's bytes similarly for bl destination and r9 as index, landing on ModRM 1C and SIB 0E with the same REX.42 prefix.
+
+Continuing through 19-22: store opcode 88 for [rsi+r8] gives 42 88 1C 06, then [rsi+r9] with al gives 42 88 04 0E, and finally the simple REX-prefixed inc/dec forms for r8 and r9 using FF /0 and FF /1.
+
+For the tail of the loop, the jmp back to rev_loop uses a short EB relative branch, and once done I'm storing a newline byte at [rsi+rdx] with opcode C6 /0, computing ModRM/SIB as 04 16 with immediate 0A, then incrementing rdx with REX.W FF C2. Finally the exit sequence sets eax to 1 and edi to 1 via B8/BF encodings and issues syscall as 0F 05 to terminate the program.
+
+Now I'm encoding the final exit syscall: moving 60 into eax (B8 3C 00 00 00), zeroing edi via xor edi,edi (31 FF), and issuing syscall (0F 05). I confirm rsi still holds the buffer pointer since it was never reassigned after being set at the start. Then I start tracking byte offsets for each instruction from the entry point to compute jump targets, listing cumulative lengths for the opening instructions as I go.
+
+Still computing offsets for the reverse loop that swaps bytes in place...
+
+Finishing the exit syscall, bringing total code length to 100 bytes. Now I'm computing the rel8 jump offsets by subtracting each instruction's end address from its target address, working through jumps #7, #10, and #16 one by one.
+
+For jump #23 (jmp rev_loop) the offset comes out negative, -29, which as a signed byte is 0xE3 — that checks out. Now I need to place the buffer right after the code ends, figuring out the vaddr so it lands in writable memory within the RWX segment.
+
+I'll set filesz to just cover the code (0xDC), keep the buffer uninitialized in file, and extend memsz by 0x200 so there's enough room beyond the code for the buffer plus safety margin. That puts buf at vaddr 0x4000DC, well within the extended memsz, giving space for the up-to-201 bytes I need to write there.
+
+Writing ELF header fields...
+
+Still writing the header bytes...
+
+Still writing header bytes...
+
+Still writing machine code and verifying byte counts...
+
+I confirm the total reaches 100 bytes for the code segment, and the full file size of 220 bytes (0xDC) matches the expected filesz value.
+
+Checking the empty-line edge case: a lone newline triggers the reverse logic correctly, ending up with rdx=0 and skipping the reverse loop since the indices cross immediately, then writing just the newline back out. I also verify the no-trailing-newline case works by reversing and appending a newline at EOF, and start considering what happens when read returns 0 for a true EOF.
+
+Verifying byte offsets and opcode encoding...
+
+Continuing with instruction 18, mov bl, [rsi+r9], giving 42 8A 1C 0E, then instruction 19, mov [rsi+r8], bl, giving 42 88 1C 06, and I'm starting instruction 20, mov [rsi+r9], al, working out its ModRM byte next.
+
+Writing ELF header bytes...
+
+Still writing the shellcode bytes, finishing with the exit syscall, then I'll format it all as one continuous hex string.
+

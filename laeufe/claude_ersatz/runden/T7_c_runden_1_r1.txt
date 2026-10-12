@@ -1,0 +1,96 @@
+Das Programm ist ein rekursiver Abstiegsparser mit einer Funktion pro Vorrangstufe:
+
+- **`expr`** verarbeitet `+` und `-` von links nach rechts.
+- **`term`** verarbeitet `*` und `/` von links nach rechts.
+- **`factor`** verarbeitet Zahlen und Klammerausdrücke.
+
+Dadurch ergeben sich Punkt vor Strich und die Klammerung von selbst.
+
+Die Division mit `/` schneidet in C bereits Richtung null ab, sodass `-7/2` direkt `-3` ergibt. Leerzeichen werden vor jedem Token übersprungen.
+
+Ein vorangestelltes `+` oder `-` vor einer Zahl ist laut Aufgabe nicht nötig, wird aber zur Sicherheit trotzdem unterstützt.
+
+BEGIN_C
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+static const char *p;
+
+static void skip(void) {
+    while (*p == ' ' || *p == '\t' || *p == '\r') p++;
+}
+
+static long long expr(void);
+
+static long long factor(void) {
+    skip();
+    if (*p == '(') {
+        p++;
+        long long v = expr();
+        skip();
+        if (*p == ')') p++;
+        return v;
+    }
+    if (*p == '-') {
+        p++;
+        return -factor();
+    }
+    if (*p == '+') {
+        p++;
+        return factor();
+    }
+    long long v = 0;
+    while (*p >= '0' && *p <= '9') {
+        v = v * 10 + (*p - '0');
+        p++;
+    }
+    return v;
+}
+
+static long long term(void) {
+    long long v = factor();
+    for (;;) {
+        skip();
+        if (*p == '*') {
+            p++;
+            v = v * factor();
+        } else if (*p == '/') {
+            p++;
+            long long d = factor();
+            if (d != 0) v = v / d;
+        } else {
+            break;
+        }
+    }
+    return v;
+}
+
+static long long expr(void) {
+    long long v = term();
+    for (;;) {
+        skip();
+        if (*p == '+') {
+            p++;
+            v = v + term();
+        } else if (*p == '-') {
+            p++;
+            v = v - term();
+        } else {
+            break;
+        }
+    }
+    return v;
+}
+
+int main(void) {
+    static char buf[1024];
+    if (!fgets(buf, sizeof buf, stdin)) buf[0] = '\0';
+    size_t n = strlen(buf);
+    while (n > 0 && (buf[n-1] == '\n' || buf[n-1] == '\r')) buf[--n] = '\0';
+    p = buf;
+    long long r = expr();
+    printf("%lld\n", r);
+    return 0;
+}
+END_C

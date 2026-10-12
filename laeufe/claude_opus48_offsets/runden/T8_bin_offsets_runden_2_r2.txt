@@ -1,0 +1,230 @@
+## Analyse
+
+Der Fehler lag in der Lese-Schleife. Nach dem ersten `read` (das die gesamten 58 Byte liefert) wurde `rax` nicht auf 0 zurückgesetzt, weil der Rücksprung bei `0x98` nach `0x80` ging statt nach `0x7e` (wo `xor eax,eax` steht). Beim zweiten Syscall stand `eax=58` – das ist **`vfork`** auf x86-64! Dadurch wurde der Prozess gegabelt und Eltern- und Kindprozess gaben jeweils die komplette Ausgabe aus → verdoppelte Ausgabe.
+
+Korrektur: Rücksprung auf `0x7e` (`xor eax,eax`), damit jede Iteration wirklich `read` (eax=0) aufruft. Das Byte bei Offset `0x99` ändert sich von `E3` auf `E1`.
+
+BEGIN_HEX
+0000: 7F 45 4C 46 02 01 01 00 00 00 00 00 00 00 00 00 ; e_ident
+0010: 02 00 3E 00 01 00 00 00 78 00 40 00 00 00 00 00 ; type=EXEC mach=x86-64 entry=0x400078
+0020: 40 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 ; phoff=0x40 shoff=0
+0030: 00 00 00 00 40 00 38 00 01 00 00 00 00 00 00 00 ; ehsize=0x40 phentsize=0x38 phnum=1
+0040: 01 00 00 00 07 00 00 00 00 00 00 00 00 00 00 00 ; PT_LOAD RWX offset=0
+0050: 00 00 40 00 00 00 00 00 00 00 40 00 00 00 00 00 ; vaddr=0x400000 paddr=0x400000
+0060: 8A 03 00 00 00 00 00 00 00 00 04 00 00 00 00 00 ; filesz=0x38A memsz=0x40000
+0070: 00 10 00 00 00 00 00 00 ; align=0x1000
+0078: 41 BC 00 00 41 00 ; mov r12d,0x410000 (inbuf)
+007E: 31 C0 ; read_loop: xor eax,eax (read)
+0080: 31 FF ; xor edi,edi (fd 0)
+0082: 4C 89 E6 ; mov rsi,r12
+0085: BA 00 20 00 00 ; mov edx,8192
+008A: 0F 05 ; syscall
+008C: 48 85 C0 ; test rax,rax
+008F: 0F 8E 0D 00 00 00 ; jle read_done
+0095: 49 01 C4 ; add r12,rax
+0098: E9 E1 FF FF FF ; jmp read_loop (0x7e)
+009D: 41 C6 04 24 00 ; mov byte[r12],0
+00A2: BB 00 00 41 00 ; mov ebx,0x410000
+00A7: 45 31 ED ; xor r13d,r13d (symcount)
+00AA: E9 00 00 00 00 ; jmp main
+00AF: E8 38 02 00 00 ; main: call skipspaces
+00B4: 0F B6 03 ; movzx eax,byte[rbx]
+00B7: 84 C0 ; test al,al
+00B9: 0F 84 94 00 00 00 ; je prog_end
+00BF: 3C 0A ; cmp al,10
+00C1: 0F 85 08 00 00 00 ; jne not_empty
+00C7: 48 FF C3 ; inc rbx
+00CA: E9 E0 FF FF FF ; jmp main
+00CF: 80 3B 70 ; cmp byte[rbx],'p'
+00D2: 0F 85 54 00 00 00 ; jne do_assign
+00D8: 80 7B 01 72 ; cmp byte[rbx+1],'r'
+00DC: 0F 85 4A 00 00 00 ; jne do_assign
+00E2: 80 7B 02 69 ; cmp byte[rbx+2],'i'
+00E6: 0F 85 40 00 00 00 ; jne do_assign
+00EC: 80 7B 03 6E ; cmp byte[rbx+3],'n'
+00F0: 0F 85 36 00 00 00 ; jne do_assign
+00F6: 80 7B 04 74 ; cmp byte[rbx+4],'t'
+00FA: 0F 85 2C 00 00 00 ; jne do_assign
+0100: 0F B6 43 05 ; movzx eax,byte[rbx+5]
+0104: 3C 61 ; cmp al,'a'
+0106: 0F 82 08 00 00 00 ; jb is_print
+010C: 3C 7A ; cmp al,'z'
+010E: 0F 86 18 00 00 00 ; jbe do_assign
+0114: 48 83 C3 05 ; is_print: add rbx,5
+0118: E8 3F 00 00 00 ; call parse_expr
+011D: E8 06 02 00 00 ; call print_number
+0122: E8 E2 01 00 00 ; call skipeol
+0127: E9 83 FF FF FF ; jmp main
+012C: E8 57 01 00 00 ; do_assign: call read_name
+0131: E8 89 01 00 00 ; call find_or_create
+0136: 56 ; push rsi
+0137: E8 B0 01 00 00 ; call skipspaces
+013C: 48 FF C3 ; inc rbx (skip '=')
+013F: E8 18 00 00 00 ; call parse_expr
+0144: 5E ; pop rsi
+0145: 48 89 46 08 ; mov [rsi+8],rax
+0149: E8 BB 01 00 00 ; call skipeol
+014E: E9 5C FF FF FF ; jmp main
+0153: B8 3C 00 00 00 ; prog_end: mov eax,60
+0158: 31 FF ; xor edi,edi
+015A: 0F 05 ; syscall
+015C: E8 44 00 00 00 ; parse_expr: call parse_term
+0161: E8 86 01 00 00 ; eloop: call skipspaces
+0166: 8A 13 ; mov dl,[rbx]
+0168: 80 FA 2B ; cmp dl,'+'
+016B: 0F 84 0A 00 00 00 ; je ea
+0171: 80 FA 2D ; cmp dl,'-'
+0174: 0F 84 16 00 00 00 ; je es
+017A: C3 ; ret
+017B: 50 ; ea: push rax
+017C: 48 FF C3 ; inc rbx
+017F: E8 21 00 00 00 ; call parse_term
+0184: 48 89 C1 ; mov rcx,rax
+0187: 58 ; pop rax
+0188: 48 01 C8 ; add rax,rcx
+018B: E9 D1 FF FF FF ; jmp eloop
+0190: 50 ; es: push rax
+0191: 48 FF C3 ; inc rbx
+0194: E8 0C 00 00 00 ; call parse_term
+0199: 48 89 C1 ; mov rcx,rax
+019C: 58 ; pop rax
+019D: 48 29 C8 ; sub rax,rcx
+01A0: E9 BC FF FF FF ; jmp eloop
+01A5: E8 6A 00 00 00 ; parse_term: call parse_factor
+01AA: E8 3D 01 00 00 ; tloop: call skipspaces
+01AF: 8A 13 ; mov dl,[rbx]
+01B1: 80 FA 2A ; cmp dl,'*'
+01B4: 0F 84 13 00 00 00 ; je tm
+01BA: 80 FA 2F ; cmp dl,'/'
+01BD: 0F 84 20 00 00 00 ; je td
+01C3: 80 FA 25 ; cmp dl,'%'
+01C6: 0F 84 2E 00 00 00 ; je tmod
+01CC: C3 ; ret
+01CD: 50 ; tm: push rax
+01CE: 48 FF C3 ; inc rbx
+01D1: E8 3E 00 00 00 ; call parse_factor
+01D6: 48 89 C1 ; mov rcx,rax
+01D9: 58 ; pop rax
+01DA: 48 0F AF C1 ; imul rax,rcx
+01DE: E9 C7 FF FF FF ; jmp tloop
+01E3: 50 ; td: push rax
+01E4: 48 FF C3 ; inc rbx
+01E7: E8 28 00 00 00 ; call parse_factor
+01EC: 48 89 C1 ; mov rcx,rax
+01EF: 58 ; pop rax
+01F0: 48 99 ; cqo
+01F2: 48 F7 F9 ; idiv rcx
+01F5: E9 B0 FF FF FF ; jmp tloop
+01FA: 50 ; tmod: push rax
+01FB: 48 FF C3 ; inc rbx
+01FE: E8 11 00 00 00 ; call parse_factor
+0203: 48 89 C1 ; mov rcx,rax
+0206: 58 ; pop rax
+0207: 48 99 ; cqo
+0209: 48 F7 F9 ; idiv rcx
+020C: 48 89 D0 ; mov rax,rdx
+020F: E9 96 FF FF FF ; jmp tloop
+0214: E8 D3 00 00 00 ; parse_factor: call skipspaces
+0219: 8A 13 ; mov dl,[rbx]
+021B: 80 FA 28 ; cmp dl,'('
+021E: 0F 84 17 00 00 00 ; je pf_paren
+0224: 80 FA 30 ; cmp dl,'0'
+0227: 0F 82 4C 00 00 00 ; jb pf_name
+022D: 80 FA 39 ; cmp dl,'9'
+0230: 0F 86 16 00 00 00 ; jbe pf_number
+0236: E9 3E 00 00 00 ; jmp pf_name
+023B: 48 FF C3 ; pf_paren: inc rbx
+023E: E8 19 FF FF FF ; call parse_expr
+0243: E8 A4 00 00 00 ; call skipspaces
+0248: 48 FF C3 ; inc rbx (skip ')')
+024B: C3 ; ret
+024C: 31 C0 ; pf_number: xor eax,eax
+024E: 8A 13 ; numloop: mov dl,[rbx]
+0250: 80 FA 30 ; cmp dl,'0'
+0253: 0F 82 1F 00 00 00 ; jb numdone
+0259: 80 FA 39 ; cmp dl,'9'
+025C: 0F 87 16 00 00 00 ; ja numdone
+0262: 48 6B C0 0A ; imul rax,rax,10
+0266: 0F B6 D2 ; movzx edx,dl
+0269: 48 83 EA 30 ; sub rdx,'0'
+026D: 48 01 D0 ; add rax,rdx
+0270: 48 FF C3 ; inc rbx
+0273: E9 D6 FF FF FF ; jmp numloop
+0278: C3 ; numdone: ret
+0279: E8 0A 00 00 00 ; pf_name: call read_name
+027E: E8 3C 00 00 00 ; call find_or_create
+0283: 48 8B 46 08 ; mov rax,[rsi+8]
+0287: C3 ; ret
+0288: 31 C0 ; read_name: xor eax,eax
+028A: 45 31 C0 ; xor r8d,r8d (shift)
+028D: 8A 13 ; rnloop: mov dl,[rbx]
+028F: 80 FA 61 ; cmp dl,'a'
+0292: 0F 82 26 00 00 00 ; jb rndone
+0298: 80 FA 7A ; cmp dl,'z'
+029B: 0F 87 1D 00 00 00 ; ja rndone
+02A1: 0F B6 D2 ; movzx edx,dl
+02A4: 4C 89 C1 ; mov rcx,r8
+02A7: 48 D3 E2 ; shl rdx,cl
+02AA: 48 09 D0 ; or rax,rdx
+02AD: 48 FF C3 ; inc rbx
+02B0: 49 83 C0 08 ; add r8,8
+02B4: 49 83 F8 40 ; cmp r8,64
+02B8: 0F 82 CF FF FF FF ; jb rnloop
+02BE: C3 ; rndone: ret
+02BF: BE 00 00 42 00 ; find_or_create: mov esi,0x420000
+02C4: 4C 89 E9 ; mov rcx,r13
+02C7: 48 85 C9 ; focloop: test rcx,rcx
+02CA: 0F 84 15 00 00 00 ; jz focnew
+02D0: 48 39 06 ; cmp [rsi],rax
+02D3: 0F 84 12 00 00 00 ; je focret
+02D9: 48 83 C6 10 ; add rsi,16
+02DD: 48 FF C9 ; dec rcx
+02E0: E9 E2 FF FF FF ; jmp focloop
+02E5: 48 89 06 ; focnew: mov [rsi],rax
+02E8: 49 FF C5 ; inc r13
+02EB: C3 ; focret: ret
+02EC: 8A 13 ; skipspaces: mov dl,[rbx]
+02EE: 80 FA 20 ; cmp dl,' '
+02F1: 0F 84 0A 00 00 00 ; je ssadv
+02F7: 80 FA 09 ; cmp dl,9
+02FA: 0F 84 01 00 00 00 ; je ssadv
+0300: C3 ; ret
+0301: 48 FF C3 ; ssadv: inc rbx
+0304: E9 E3 FF FF FF ; jmp skipspaces
+0309: 8A 13 ; skipeol: mov dl,[rbx]
+030B: 84 D2 ; test dl,dl
+030D: 0F 84 14 00 00 00 ; jz seoldone
+0313: 80 FA 0A ; cmp dl,10
+0316: 0F 84 08 00 00 00 ; je seolnl
+031C: 48 FF C3 ; inc rbx
+031F: E9 E5 FF FF FF ; jmp skipeol
+0324: 48 FF C3 ; seolnl: inc rbx
+0327: C3 ; seoldone: ret
+0328: 41 BA 30 00 43 00 ; print_number: mov r10d,0x430030 (end)
+032E: 4C 89 D6 ; mov rsi,r10
+0331: 48 FF CE ; dec rsi
+0334: C6 06 0A ; mov byte[rsi],10
+0337: 45 31 C9 ; xor r9d,r9d (neg flag)
+033A: 48 85 C0 ; test rax,rax
+033D: 0F 89 09 00 00 00 ; jns pnpos
+0343: 41 B9 01 00 00 00 ; mov r9d,1
+0349: 48 F7 D8 ; neg rax
+034C: 41 BB 0A 00 00 00 ; pnpos: mov r11d,10
+0352: 31 D2 ; pnloop: xor edx,edx
+0354: 49 F7 F3 ; div r11
+0357: 80 C2 30 ; add dl,'0'
+035A: 48 FF CE ; dec rsi
+035D: 88 16 ; mov [rsi],dl
+035F: 48 85 C0 ; test rax,rax
+0362: 0F 85 EA FF FF FF ; jnz pnloop
+0368: 4D 85 C9 ; test r9,r9
+036B: 0F 84 06 00 00 00 ; jz pnwrite
+0371: 48 FF CE ; dec rsi
+0374: C6 06 2D ; mov byte[rsi],'-'
+0377: 4C 89 D2 ; pnwrite: mov rdx,r10
+037A: 48 29 F2 ; sub rdx,rsi
+037D: B8 01 00 00 00 ; mov eax,1 (write)
+0382: BF 01 00 00 00 ; mov edi,1
+0387: 0F 05 ; syscall
+0389: C3 ; ret
+END_HEX

@@ -1,0 +1,8 @@
+nohup: Eingabe wird ignoriert
+4 Anfragen, 4 gleichzeitig
+T9_c_runden_2 Runde 1: OK  104.2 s, 9288 Tokens
+T9_c_runden_1 Runde 1: OK  116.0 s, 10553 Tokens
+T9_bin_runden_2 Runde 1: keine Abgabe/Markierung  1424.9 s, 128000 Tokens  ABGESCHNITTEN (max_tokens)
+T9_bin_runden_1 Runde 1: keine Abgabe/Markierung  1457.3 s, 128000 Tokens  ABGESCHNITTEN (max_tokens)
+T9_bin_runden_2 Runde 2: keine Abgabe/Markierung  1343.3 s, 128000 Tokens  ABGESCHNITTEN (max_tokens)
+T9_bin_runden_1 Runde 2: keine Abgabe/Markierung  1398.7 s, 128000 Tokens  ABGESCHNITTEN (max_tokens)

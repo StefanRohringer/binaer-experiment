@@ -1,0 +1,2 @@
+I'm planning a simple recursive descent parser for integer expressions using +, -, *, /, handling spacing and reading input with fgets into a buffer, using long long arithmetic with C-style truncating division, while tolerating unary minus defensively even though the spec only expects non-negative integers.
+

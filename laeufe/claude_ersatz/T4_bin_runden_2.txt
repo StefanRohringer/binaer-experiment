@@ -1,0 +1,47 @@
+# Analyse der Aufgabe
+
+Ich baue eine minimale statische ELF64-Datei mit einem einzigen RWX-LOAD-Segment:
+
+**Programmlogik (x86-64 Syscalls):**
+1. `read(0, buf, 200)` → Länge in `rax`
+2. Bei `rax<=0` → direkt exit 0
+3. Falls letztes Byte `\n` → Länge um 1 verringern
+4. Puffer in-place umdrehen (zwei Zeiger)
+5. `\n` anhängen, `write(1, buf, len)`
+6. `exit(0)`
+
+Puffer liegt als BSS (`memsz > filesz`) bei vaddr `0x4000DC`. Entry bei `0x400078` (direkt nach den 120 Byte Headern).
+
+Die Sprünge, SIB-Adressierungen (`[rsi+rax-1]`, `[rsi+r8]` usw.) und REX-Präfixe wurden byteweise berechnet. Randfälle: leere Zeile (nur `\n`) → gibt nur `\n` aus; EOF ohne Daten → keine Ausgabe, exit 0.
+
+**Layout:** ELF-Header (64) + Program-Header (56) + Code (100) = 220 = `0xDC` Byte.
+
+BEGIN_HEX
+7F 45 4C 46 02 01 01 00 00 00 00 00 00 00 00 00
+02 00 3E 00 01 00 00 00
+78 00 40 00 00 00 00 00
+40 00 00 00 00 00 00 00
+00 00 00 00 00 00 00 00
+00 00 00 00
+40 00
+38 00
+01 00
+00 00
+00 00
+00 00
+01 00 00 00
+07 00 00 00
+00 00 00 00 00 00 00 00
+00 00 40 00 00 00 00 00
+00 00 40 00 00 00 00 00
+DC 00 00 00 00 00 00 00
+DC 02 00 00 00 00 00 00
+00 10 00 00 00 00 00 00
+31 FF 31 C0 BE DC 00 40 00 BA C8 00 00 00 0F 05
+48 85 C0 7E 46 48 89 C2 80 7C 06 FF 0A 75 03 48
+FF CA 4D 31 C0 49 89 D1 49 FF C9 4D 39 C8 7D 18
+42 8A 04 06 42 8A 1C 0E 42 88 1C 06 42 88 04 0E
+49 FF C0 49 FF C9 EB E3 C6 04 16 0A 48 FF C2 B8
+01 00 00 00 BF 01 00 00 00 0F 05 B8 3C 00 00 00
+31 FF 0F 05
+END_HEX

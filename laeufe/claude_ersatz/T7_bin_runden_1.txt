@@ -1,0 +1,46 @@
+## Analyse
+
+Ich habe einen rekursiven Abstiegs-Parser (expr → term → factor) direkt in x86-64-Maschinencode implementiert:
+
+- `_start`: `read(0,...)` liest die Zeile in Puffer `0x402000`, null-terminiert, ruft `parse_expr` auf, gibt Ergebnis dezimal (mit evtl. `-`) + `\n` aus, `exit(0)`.
+- `parse_expr`: term (('+'|'-') term)*
+- `parse_term`: factor (('*'|'/') factor)* — `idiv` schneidet Richtung null ab (-7/2 = -3 ✓)
+- `parse_factor`: Zahl | `(`expr`)` | unäres `+`/`-`
+- `skip_spaces`: überspringt Space/Tab; Zahlenpointer liegt in `rbx`.
+
+Statische ELF64, `ET_EXEC`, Ladeadresse `0x400000`, ein RWX-Segment (filesz=0x1D4, memsz=0x3000, damit Puffer bei `0x402000` im zeroed BSS liegt).
+
+Die Offsets aller Sprünge/Calls habe ich von Hand berechnet und gegengeprüft.
+
+BEGIN_HEX
+7F 45 4C 46 02 01 01 00 00 00 00 00 00 00 00 00
+02 00 3E 00 01 00 00 00 78 00 40 00 00 00 00 00
+40 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+00 00 00 00 40 00 38 00 01 00 00 00 00 00 00 00
+01 00 00 00 07 00 00 00 00 00 00 00 00 00 00 00
+00 00 40 00 00 00 00 00 00 00 40 00 00 00 00 00
+D4 01 00 00 00 00 00 00 00 30 00 00 00 00 00 00
+00 10 00 00 00 00 00 00
+31 C0 31 FF BE 00 20 40 00 BA C9 00 00 00 0F 05
+C6 04 06 00 BB 00 20 40 00 E8 61 00 00 00 45 31
+C0 48 85 C0 79 09 48 F7 D8 41 B8 01 00 00 00 BF
+20 21 40 00 48 FF CF C6 07 0A B9 0A 00 00 00 31
+D2 48 F7 F1 80 C2 30 48 FF CF 88 17 48 85 C0 75
+EE 45 85 C0 74 06 48 FF CF C6 07 2D 48 89 FE B8
+20 21 40 00 48 2B C6 48 89 C2 B8 01 00 00 00 BF
+01 00 00 00 0F 05 B8 3C 00 00 00 31 FF 0F 05 E8
+33 00 00 00 E8 C1 00 00 00 8A 0B 80 F9 2B 74 06
+80 F9 2D 74 10 C3 48 FF C3 50 E8 18 00 00 00 59
+48 01 C8 EB DF 48 FF C3 50 E8 09 00 00 00 59 48
+29 C1 48 89 C8 EB CD E8 36 00 00 00 E8 89 00 00
+00 8A 0B 80 F9 2A 74 06 80 F9 2F 74 11 C3 48 FF
+C3 50 E8 1B 00 00 00 59 48 0F AF C1 EB DE 48 FF
+C3 50 E8 0B 00 00 00 48 89 C1 58 48 99 48 F7 F9
+EB CA E8 53 00 00 00 8A 0B 80 F9 28 74 3B 80 F9
+2D 74 22 80 F9 2B 74 29 31 C0 0F B6 0B 80 E9 30
+80 F9 09 77 0F 48 6B C0 0A 0F B6 C9 48 01 C8 48
+FF C3 EB E6 C3 48 FF C3 E8 C5 FF FF FF 48 F7 D8
+C3 48 FF C3 E9 B9 FF FF FF 48 FF C3 E8 3E FF FF
+FF E8 04 00 00 00 48 FF C3 C3 8A 0B 80 F9 20 74
+06 80 F9 09 74 01 C3 48 FF C3 EB EE
+END_HEX

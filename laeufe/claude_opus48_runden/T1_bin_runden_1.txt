@@ -1,0 +1,41 @@
+# Lösung
+
+Ich konstruiere eine minimale statische ELF64-Datei für Linux x86-64.
+
+**Aufbau:**
+- ELF-Header (64 Bytes), Entry = `0x400078`
+- Ein Program-Header `PT_LOAD` (56 Bytes), geladen nach `0x400000`
+- Code ab Offset `0x78`:
+  - `write(1, 0x400097, 11)`
+  - `exit(0)`
+- String "Hallo Welt\n" ab Offset `0x97`
+
+**Code (31 Bytes):**
+```
+bf 01 00 00 00    mov edi,1          ; fd=1 (stdout)
+be 97 00 40 00    mov esi,0x400097   ; Adresse des Strings
+ba 0b 00 00 00    mov edx,11         ; Länge
+b8 01 00 00 00    mov eax,1          ; sys_write
+0f 05             syscall
+31 ff             xor edi,edi        ; Exit-Code 0
+b8 3c 00 00 00    mov eax,60         ; sys_exit
+0f 05             syscall
+```
+
+**String (11 Bytes):** `48 61 6c 6c 6f 20 57 65 6c 74 0a` = "Hallo Welt\n"
+
+Gesamtgröße: 64 + 56 + 31 + 11 = 162 Bytes (`0xA2`).
+
+BEGIN_HEX
+7f 45 4c 46 02 01 01 00 00 00 00 00 00 00 00 00
+02 00 3e 00 01 00 00 00 78 00 40 00 00 00 00 00
+40 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+00 00 00 00 40 00 38 00 01 00 00 00 00 00 00 00
+01 00 00 00 05 00 00 00 00 00 00 00 00 00 00 00
+00 00 40 00 00 00 00 00 00 00 40 00 00 00 00 00
+a2 00 00 00 00 00 00 00 a2 00 00 00 00 00 00 00
+00 10 00 00 00 00 00 00
+bf 01 00 00 00 be 97 00 40 00 ba 0b 00 00 00
+b8 01 00 00 00 0f 05 31 ff b8 3c 00 00 00 0f 05
+48 61 6c 6c 6f 20 57 65 6c 74 0a
+END_HEX

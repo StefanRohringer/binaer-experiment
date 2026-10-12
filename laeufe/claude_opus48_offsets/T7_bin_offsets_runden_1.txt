@@ -1,0 +1,142 @@
+# Analyse
+
+Ich implementiere einen rekursiven Abstiegsparser in handgeschriebenem x86-64-Maschinencode. Der globale Eingabezeiger liegt dauerhaft in `r12` (wird durch die Rekursion fortgeschrieben und wirkt dadurch „global"). Zwischenergebnisse werden über den Stack gerettet.
+
+Grammatik: `expr = term (('+'|'-') term)*`, `term = factor (('*'|'/') factor)*`, `factor = '(' expr ')' | ['+'|'-'] factor | number`. Division via `idiv` (schneidet Richtung Null ab).
+
+Speicher: Eingabepuffer bei `0x402000`, Ausgabe-Scratch bei `0x402220` (im zerofill-BSS-Bereich des einzigen RWX-LOAD-Segments).
+
+Die Datei ist 0x1DD (477) Bytes groß.
+
+BEGIN_HEX
+0000: 7F 45 4C 46 02 01 01 00 00 00 00 00 00 00 00 00 ; ELF ident
+0010: 02 00 3E 00 01 00 00 00 78 00 40 00 00 00 00 00 ; type=EXEC,x86-64,entry=0x400078
+0020: 40 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 ; phoff=0x40, shoff=0
+0030: 00 00 00 00 40 00 38 00 01 00 00 00 00 00 00 00 ; ehsize=64,phentsize=56,phnum=1
+0040: 01 00 00 00 07 00 00 00 00 00 00 00 00 00 00 00 ; PT_LOAD RWX offset=0
+0050: 00 00 40 00 00 00 00 00 00 00 40 00 00 00 00 00 ; vaddr=paddr=0x400000
+0060: DD 01 00 00 00 00 00 00 00 23 00 00 00 00 00 00 ; filesz=0x1DD memsz=0x2300
+0070: 00 10 00 00 00 00 00 00 ; align=0x1000
+0078: 31 FF ; xor edi,edi (fd 0)
+007A: BE 00 20 40 00 ; mov esi,0x402000 (buf)
+007F: BA 00 01 00 00 ; mov edx,256
+0084: 31 C0 ; xor eax,eax (read)
+0086: 0F 05 ; syscall
+0088: 41 BC 00 20 40 00 ; mov r12d,0x402000 (ptr)
+008E: E8 64 00 00 00 ; call parse_expr
+0093: 41 BD 20 22 40 00 ; mov r13d,0x402220 (scratch end)
+0099: 4D 89 EE ; mov r14,r13
+009C: 49 FF CE ; dec r14
+009F: 41 C6 06 0A ; mov byte[r14],10 (\n)
+00A3: 45 31 C0 ; xor r8d,r8d (sign=0)
+00A6: 48 85 C0 ; test rax,rax
+00A9: 79 09 ; jns .pos
+00AB: 48 F7 D8 ; neg rax
+00AE: 41 B8 01 00 00 00 ; mov r8d,1
+00B4: 41 B9 0A 00 00 00 ; .pos: mov r9d,10
+00BA: 31 D2 ; .loop: xor edx,edx
+00BC: 49 F7 F1 ; div r9
+00BF: 80 C2 30 ; add dl,'0'
+00C2: 49 FF CE ; dec r14
+00C5: 41 88 16 ; mov [r14],dl
+00C8: 48 85 C0 ; test rax,rax
+00CB: 75 ED ; jnz .loop
+00CD: 45 85 C0 ; test r8d,r8d
+00D0: 74 07 ; jz .nosign
+00D2: 49 FF CE ; dec r14
+00D5: 41 C6 06 2D ; mov byte[r14],'-'
+00D9: B8 01 00 00 00 ; .nosign: mov eax,1 (write)
+00DE: BF 01 00 00 00 ; mov edi,1 (stdout)
+00E3: 4C 89 F6 ; mov rsi,r14
+00E6: 4C 89 EA ; mov rdx,r13
+00E9: 48 29 F2 ; sub rdx,rsi (len)
+00EC: 0F 05 ; syscall
+00EE: B8 3C 00 00 00 ; mov eax,60 (exit)
+00F3: 31 FF ; xor edi,edi
+00F5: 0F 05 ; syscall
+00F7: E8 37 00 00 00 ; parse_expr: call parse_term
+00FC: 50 ; .el: push rax
+00FD: E8 CC 00 00 00 ; call skip_ws
+0102: 41 0F B6 04 24 ; movzx eax,byte[r12]
+0107: 3C 2B ; cmp al,'+'
+0109: 74 06 ; je .add
+010B: 3C 2D ; cmp al,'-'
+010D: 74 13 ; je .sub
+010F: 58 ; pop rax
+0110: C3 ; ret
+0111: 49 FF C4 ; .add: inc r12
+0114: E8 1A 00 00 00 ; call parse_term
+0119: 48 89 C1 ; mov rcx,rax
+011C: 58 ; pop rax
+011D: 48 01 C8 ; add rax,rcx
+0120: EB DA ; jmp .el
+0122: 49 FF C4 ; .sub: inc r12
+0125: E8 09 00 00 00 ; call parse_term
+012A: 48 89 C1 ; mov rcx,rax
+012D: 58 ; pop rax
+012E: 48 29 C8 ; sub rax,rcx
+0131: EB C9 ; jmp .el
+0133: E8 3A 00 00 00 ; parse_term: call parse_factor
+0138: 50 ; .tl: push rax
+0139: E8 90 00 00 00 ; call skip_ws
+013E: 41 0F B6 04 24 ; movzx eax,byte[r12]
+0143: 3C 2A ; cmp al,'*'
+0145: 74 06 ; je .mul
+0147: 3C 2F ; cmp al,'/'
+0149: 74 14 ; je .div
+014B: 58 ; pop rax
+014C: C3 ; ret
+014D: 49 FF C4 ; .mul: inc r12
+0150: E8 1D 00 00 00 ; call parse_factor
+0155: 48 89 C1 ; mov rcx,rax
+0158: 58 ; pop rax
+0159: 48 0F AF C1 ; imul rax,rcx
+015D: EB D9 ; jmp .tl
+015F: 49 FF C4 ; .div: inc r12
+0162: E8 0B 00 00 00 ; call parse_factor
+0167: 48 89 C1 ; mov rcx,rax
+016A: 58 ; pop rax
+016B: 48 99 ; cqo
+016D: 48 F7 F9 ; idiv rcx
+0170: EB C6 ; jmp .tl
+0172: E8 57 00 00 00 ; parse_factor: call skip_ws
+0177: 41 0F B6 04 24 ; movzx eax,byte[r12]
+017C: 3C 28 ; cmp al,'('
+017E: 74 0A ; je .paren
+0180: 3C 2B ; cmp al,'+'
+0182: 74 19 ; je .uplus
+0184: 3C 2D ; cmp al,'-'
+0186: 74 1A ; je .uminus
+0188: EB 24 ; jmp parse_number
+018A: 49 FF C4 ; .paren: inc r12
+018D: E8 65 FF FF FF ; call parse_expr
+0192: 50 ; push rax
+0193: E8 36 00 00 00 ; call skip_ws
+0198: 49 FF C4 ; inc r12 (skip ')')
+019B: 58 ; pop rax
+019C: C3 ; ret
+019D: 49 FF C4 ; .uplus: inc r12
+01A0: EB D0 ; jmp parse_factor
+01A2: 49 FF C4 ; .uminus: inc r12
+01A5: E8 C8 FF FF FF ; call parse_factor
+01AA: 48 F7 D8 ; neg rax
+01AD: C3 ; ret
+01AE: 31 C9 ; parse_number: xor ecx,ecx
+01B0: 41 0F B6 04 24 ; .nl: movzx eax,byte[r12]
+01B5: 2C 30 ; sub al,'0'
+01B7: 3C 09 ; cmp al,9
+01B9: 77 0F ; ja .nd
+01BB: 48 6B C9 0A ; imul rcx,rcx,10
+01BF: 0F B6 C0 ; movzx eax,al
+01C2: 48 01 C1 ; add rcx,rax
+01C5: 49 FF C4 ; inc r12
+01C8: EB E6 ; jmp .nl
+01CA: 48 89 C8 ; .nd: mov rax,rcx
+01CD: C3 ; ret
+01CE: 41 0F B6 04 24 ; skip_ws: movzx eax,byte[r12]
+01D3: 3C 20 ; cmp al,' '
+01D5: 75 05 ; jne .ret
+01D7: 49 FF C4 ; inc r12
+01DA: EB F2 ; jmp skip_ws
+01DC: C3 ; .ret: ret
+END_HEX

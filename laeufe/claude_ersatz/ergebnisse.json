@@ -1,0 +1,129 @@
+[
+ {
+  "aufgabe": "T1",
+  "modus": "bin_runden",
+  "lauf": 1,
+  "ok": true,
+  "info": "1/1 Tests bestanden",
+  "groesse_byte": 167,
+  "antwort_zeichen": 1059,
+  "runden": 2,
+  "ersatz": "claude-opus-4-8"
+ },
+ {
+  "aufgabe": "T1",
+  "modus": "bin_runden",
+  "lauf": 2,
+  "ok": true,
+  "info": "1/1 Tests bestanden",
+  "groesse_byte": 164,
+  "antwort_zeichen": 1375,
+  "runden": 1
+ },
+ {
+  "aufgabe": "T1",
+  "modus": "c_runden",
+  "lauf": 1,
+  "ok": true,
+  "info": "1/1 Tests bestanden",
+  "groesse_byte": 15968,
+  "antwort_zeichen": 228,
+  "runden": 1
+ },
+ {
+  "aufgabe": "T1",
+  "modus": "c_runden",
+  "lauf": 2,
+  "ok": true,
+  "info": "1/1 Tests bestanden",
+  "groesse_byte": 15968,
+  "antwort_zeichen": 234,
+  "runden": 1
+ },
+ {
+  "aufgabe": "T4",
+  "modus": "bin_runden",
+  "lauf": 1,
+  "ok": true,
+  "info": "3/3 Tests bestanden",
+  "groesse_byte": 215,
+  "antwort_zeichen": 1691,
+  "runden": 1,
+  "ersatz": "claude-opus-4-8"
+ },
+ {
+  "aufgabe": "T4",
+  "modus": "bin_runden",
+  "lauf": 2,
+  "ok": true,
+  "info": "3/3 Tests bestanden",
+  "groesse_byte": 220,
+  "antwort_zeichen": 1448,
+  "runden": 1,
+  "ersatz": "claude-opus-4-8"
+ },
+ {
+  "aufgabe": "T4",
+  "modus": "c_runden",
+  "lauf": 1,
+  "ok": true,
+  "info": "3/3 Tests bestanden",
+  "groesse_byte": 16192,
+  "antwort_zeichen": 650,
+  "runden": 1,
+  "ersatz": "claude-opus-4-8"
+ },
+ {
+  "aufgabe": "T4",
+  "modus": "c_runden",
+  "lauf": 2,
+  "ok": true,
+  "info": "3/3 Tests bestanden",
+  "groesse_byte": 16192,
+  "antwort_zeichen": 686,
+  "runden": 1,
+  "ersatz": "claude-opus-4-8"
+ },
+ {
+  "aufgabe": "T7",
+  "modus": "bin_runden",
+  "lauf": 1,
+  "ok": true,
+  "info": "10/10 Tests bestanden",
+  "groesse_byte": 468,
+  "antwort_zeichen": 2193,
+  "runden": 1,
+  "ersatz": "claude-opus-4-8"
+ },
+ {
+  "aufgabe": "T7",
+  "modus": "bin_runden",
+  "lauf": 2,
+  "ok": true,
+  "info": "10/10 Tests bestanden",
+  "groesse_byte": 613,
+  "antwort_zeichen": 2699,
+  "runden": 1,
+  "ersatz": "claude-opus-4-8"
+ },
+ {
+  "aufgabe": "T7",
+  "modus": "c_runden",
+  "lauf": 1,
+  "ok": true,
+  "info": "10/10 Tests bestanden",
+  "groesse_byte": 16248,
+  "antwort_zeichen": 2184,
+  "runden": 1
+ },
+ {
+  "aufgabe": "T7",
+  "modus": "c_runden",
+  "lauf": 2,
+  "ok": true,
+  "info": "10/10 Tests bestanden",
+  "groesse_byte": 16272,
+  "antwort_zeichen": 2456,
+  "runden": 1
+ }
+]

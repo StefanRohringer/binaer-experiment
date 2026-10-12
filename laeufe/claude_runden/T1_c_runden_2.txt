@@ -1,0 +1,11 @@
+Ein minimales Programm, das "Hallo Welt" mit Zeilenumbruch ausgibt und mit Exit-Code 0 endet:
+
+BEGIN_C
+#include <stdio.h>
+
+int main(void)
+{
+    printf("Hallo Welt\n");
+    return 0;
+}
+END_C

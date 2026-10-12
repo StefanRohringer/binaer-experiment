@@ -1,0 +1,706 @@
+This is a huge task — building a raw ELF64 executable by hand that implements a language interpreter with functions and recursion, all in manually written x86-64 machine code. I need to think carefully about how to structure this before diving in.
+
+I'll design it as a text-based interpreter that re-parses function bodies each call rather than compiling, using a recursive descent evaluator working directly off a character pointer into the stdin buffer. I'm sketching the global state layout now: the raw input buffer, a variables table mapping names to values, and a function table storing names, parameters, and body text.
+
+For handling recursion and parameters, I'm planning a call-frame approach where each function invocation saves the current parse pointer and parameter environment, sets up a new frame with the argument names bound to evaluated values, then restores everything after the body executes.
+
+For the actual implementation, I need to decide on data layout for the parser and interpreter state, likely using a BSS region with writable memory mapped via ELF program headers since this is being built without libc support.
+
+Mapping out the memory plan now: a code segment at 0x400000 and a writable data region at 0x600000 holding the input buffer, variable tables, and function tables, with function bodies pointing directly into the stored input buffer rather than being copied elsewhere.
+
+I'm laying out each variable as a 16-byte entry (8-byte zero-padded name plus 8-byte value) for up to 30 variables, and each function as a 64-byte entry (name, param count, up to 4 param names, and body start/end pointers) for up to 20 functions, with separate counters tracking how many variables and functions are currently defined.
+
+Now I'm planning the main interpreter loop: read all of stdin into a buffer via repeated read syscalls, then process it line by line -- skipping blank lines, detecting "print" statements versus "def" function definitions versus plain variable assignments, and figuring out how to tokenize the keyword boundaries correctly.
+
+I need to work out ternary precedence carefully: expr is ternary, which parses a comparison, and if followed by '?', parses the true branch (itself a full expr allowing nested ternaries) then requires ':' before parsing the else branch recursively for right-associativity, so chains like "a ? b : c ? d : e" group correctly as "a ? b : (c ? d : e)".
+
+I realize evaluating both branches eagerly is wrong since only the taken branch should run—so I need to add an "eval" flag that lets me parse through the untaken branch structurally without actually computing its value, avoiding issues like unwanted recursion or side effects.
+
+I'm planning register allocation: keeping the source pointer in r12 as shared global state across recursive calls, with the frame pointer saved/restored at call boundaries since it changes less often. I'm weighing whether to keep the pointer in memory instead for simplicity versus using r12 directly despite calling convention concerns.
+
+For the live flag, I'm deciding whether to thread it through a dedicated register or pass it as an argument, since it rarely changes but needs to survive nested calls.
+
+Defining the internal calling convention now: p in r12, live flag in r14, frame pointer in r13, with results returned in rax and clobber rules for the other general-purpose registers.
+
+Writing the grammar parsing functions...
+
+After reading an identifier, I skip spaces and check for '(' since spaces are allowed before it per the spec—if present it's a function call, otherwise it's a variable or parameter lookup (checking frame params first, then globals). For calls I parse comma-separated arguments up to ')', evaluating each with parse_expr when live and storing up to 4 values before finding and invoking the function.
+
+For the call itself, I locate the function by matching its name against the known function list, parse arguments into argvals, then build a new frame copying the parameter names with the evaluated values, swap r13 to point at the new frame while saving the old one, and swap r12 to point at the function body source while saving the caller's position so I can resume there after evaluating the body.
+
+When not live, I still need to consume the parentheses and arguments to keep the pointer in sync, but each argument gets parsed with live=0 so nested calls in dead branches aren't actually executed, and the whole call just returns 0 without touching the function table or frame setup. Similarly, a bare identifier reference in dead mode doesn't need lookup -- it's just skipped and treated as 0 while still advancing the pointer correctly.
+
+Now I'm designing the multiplication-level parser: it starts with a primary value, then loops consuming '*', '/', or '%' operators, parsing the right-hand primary each time, and only actually applying the operation (multiply, signed truncating divide, or remainder) when live is true. Division needs to use signed truncation toward zero, so that maps to idiv semantics.
+
+Then the addition-level parser builds on top of that, starting with a multiplicative term and looping over '+' and '-' operators in the same live-gated way.
+
+After that comes the comparison-level parser: it starts with an additive expression, then checks for a comparison operator by reading characters ('<' possibly followed by '=' for '<=', similarly '>' and '>=', '==' requiring two equals signs, '!=' for not-equal), parses the right side, and converts the result to 1 or 0 based on the comparison when live. I'm noting that the spec says comparisons aren't chained, so I just need left-to-right evaluation without allowing multiple comparison operators in sequence.
+
+For the lowest-precedence ternary parser, I evaluate the condition via the comparison parser, and if a '?' follows, I split into true/false branches: each branch is only "live" if the condition matches and the outer context is live, recursively parsing each branch and expecting a ':' separator, returning the selected branch's value or 0 if not live. I need to make sure the liveness flag is properly saved and restored around these branch evaluations since it's being temporarily modified for each side.
+
+Now I'm moving to statement handling: assignments look up or create a variable and store the evaluated expression; print statements evaluate and output the decimal value followed by a newline; and function definitions capture the name, parameter list, and a pointer to where the body expression starts, relying on the expression parser naturally stopping at the newline so I don't need to track an explicit end pointer.
+
+For line iteration, I'm setting up an outer loop that finds each line's start and end (scanning to the next newline or EOF), processes that line's content as a statement, then advances the cursor past the newline to begin the next line.
+
+For keyword detection at the start of a statement, I'll read the identifier into a small zero-padded buffer so I can compare it directly against "print" and "def" by byte value, skipping empty lines along the way.
+
+Computing the packed little-endian byte value for "print" to use as a comparison constant for keyword matching.
+
+I'm designing a routine to read an identifier into a packed 64-bit register, shifting each ASCII byte into position by length, capping at 8 characters so keywords like "print" and "def" can be matched directly as integer constants.
+
+Since names are capped at 8 letters and zero-padded, distinct identifiers always produce distinct packed values, so I can compare variable names by comparing these packed integers directly instead of doing string comparisons.
+
+Now I'm designing the memory layout: variable entries pack name and value into 16 bytes, function entries pack name, parameter count, up to 4 packed parameter names, and a body pointer into a rounded 64-byte struct, and I'm sketching the frame structure to track call counts and names.
+
+I'm working out lookup logic—scanning VARS linearly for a packed name match, and scanning the active frame's parameter names before falling back to globals—then moving into how a function call builds its frame: parsing arguments into a local array, allocating stack space, and populating the frame's count and values.
+
+Setting up the actual call now: saving the old frame pointer and body pointer in r13/r12, invoking parse_ternary with live=1 in r14, then restoring both registers and deallocating the frame afterward with the result left in rax. I'm also reasoning that since calls only happen on live branches, live is always 1 during the call and safely restorable afterward.
+
+Before switching frames I need to evaluate arguments using the caller's current r13 and live state, storing argv values in a stack buffer so they survive subsequent clobbering parses. Given the scale of this, I'm planning to write out the full assembly with labels and offsets first, then hand-encode it carefully instruction by instruction.
+
+To keep things manageable, I'm simplifying memory layout by using a single RWX PT_LOAD segment covering code and data together, with memsz exceeding filesz so the kernel zero-fills the trailing BSS region automatically rather than needing separate segments.
+
+I'm placing the data region at a fixed vaddr offset beyond the code, like 0x410000, giving plenty of room for the code which should stay under 4KB, then laying out my buffers and variables sequentially from there.
+
+Continuing to plan out the address layout for variables, functions, and output buffer, I'm computing the total memsz needed to cover everything and rounding up to 0x20000 for safety since the single RWX segment maps from vaddr to vaddr+memsz.
+
+Checking page alignment between offset and vaddr confirms both are zero mod 0x1000, which satisfies the ELF requirement. I'm laying out the file with the ELF header at offset 0, the single program header at 0x40, and code starting at 0x78, so entry point becomes 0x400078. Now I'm writing the code starting from that offset.
+
+Setting up global registers for the source pointer, frame pointer, and a live flag, along with memory addresses for input buffer, variable/function tables, and a number buffer. Writing startup code...
+
+Writing the main parsing loop...
+
+Still writing interpreter logic...
+
+Computing the slot pointer for the new function entry and storing its name, then realizing register conflicts between read_ident and my parameter counter, so I'm reconsidering which registers to use to avoid clobbering.
+
+Writing param loop code...
+
+Finishing up by incrementing the function count, then moving to advance to the next line by scanning for a newline or null terminator, and finally emitting the exit syscall. I'm double-checking the scan_nl logic correctly leaves rbp positioned right after the newline for the next iteration.
+
+Now I need to establish a register convention: since my internal functions must preserve rbp (current pointer) and r15 (end pointer) across calls, I'm deciding which registers are safe to clobber versus which must be preserved, particularly making sure read_ident doesn't stomp on r9 since it's reused across calls in do_def.
+
+I'm writing skip_sp to advance past spaces by incrementing r12 while the byte at r12 is a space character, then starting read_ident to pack identifier characters into rax.
+
+Still writing parser...
+
+I'm tracking which registers read_ident clobbers (rax, rcx, rdx, r8, r12) so I can make sure callers like do_def preserve what they need across calls.
+
+Now I'm moving to parse_ternary: it calls parse_cmp to evaluate the condition, checks for '?' after skipping spaces, and if found pushes the condition value and the live flag onto the stack before consuming the '?' and computing the true-branch liveness.
+
+Still writing ternary logic...
+
+I'm double-checking the pop ordering matches the earlier push order (trueval, oldlive, cond) so the right values land in rcx, r8, r9, then restoring r14 to oldlive before branching on cond to select trueval or falseval as the result.
+
+Still writing ternary logic...
+
+Actually I realize I need to double-check ordering carefully -- skip_sp clobbers rax, so I need to make sure I'm not losing the cond value on the stack when calling it after parse_cmp.
+
+Continuing the ternary code...
+
+Now I'm moving to parse_cmp: it first parses an additive expression, then loops checking for comparison operators like `<`, `>`, `=`, `!`, handling cases like `<=` by peeking ahead, and recursively parsing the right side to build comparison logic.
+
+Writing comparison opcode handlers...
+
+Checking the loop logic: I push the left operand before each iteration, pop it back for the comparison, then loop again pushing the new result as the next left operand, making sure skip_sp doesn't clobber the saved value. Since comparisons aren't chained in this grammar, the loop still handles repeats safely, and now I'm moving on to parse_add.
+
+Confirming no unary minus exists in the grammar since numbers are non-negative, so subtraction only happens in binary form. I also verify precedence is correct: '+'/'-' bind tighter than comparisons since parse_cmp calls parse_add which calls parse_mul, and comparison operators like '>=' are handled separately at the cmp level.
+
+Writing multiplication loop...
+
+Writing the modulo logic similarly... but now I'm worried about a division-by-zero edge case: if a dead branch contains something like "x/y" where names default to zero, idiv would still execute and crash even though the branch is logically unreachable. I need to check whether parse_mul unconditionally performs the division regardless of liveness.
+
+Since dead branches aren't actually evaluated per the language semantics, idiv could still trap on divide-by-zero even though the spec guarantee only applies to live operations. So I need to guard the div/mod operations to skip the actual idiv instruction when not live, just setting rax=0 instead to avoid a hardware fault.
+
+Writing parser logic...
+
+Still writing function call parsing logic...
+
+Still parsing call arguments...
+
+Actually I realize I need the parameter count before popping args correctly, so it's better to look up the function definition first to get its param count, rather than trying to track the count through the comma-separated parsing loop.
+
+I realize I need to be careful about register preservation across the recursive arg evaluation — rsi and r10 won't survive calls to parse_expr, so I should evaluate all arguments first and stash results on the stack before building the call frame, rather than trying to hold onto the entry pointer and param count in registers throughout.
+
+This stack juggling is getting messy, so I'm reconsidering the approach: rather than using the CPU stack with fragile offsets, I could repurpose r13 as a frame pointer for the new call frame, freeing rbp since I'd move the line cursor to a global instead. That way each recursive call builds its frame cleanly using r13 as the base address.
+
+Still working out the stack layout...
+
+I realize tracking entry's position gets tricky once I start pushing args, since the offset shifts with each push and a global counter would get clobbered by nested calls. I think the safer approach is to pre-allocate the frame upfront and stash n and entry there before evaluating args, rather than relying on relative stack offsets.
+
+Checking which registers my eval functions actually preserve, I find rbp, r13, r14, r15 are all already spoken for -- so freeing up rbp by moving the current pointer into a global memory slot instead would give me one more scratch preserved register to work with for building the argument frame.
+
+Now I'm sketching the call frame layout: storing the argument count plus up to four name/value pairs in a fixed 72-byte block, rounded to 80 for stack alignment, with rbp pointing at it locally within `.call` while the caller's rbp gets saved and restored around any recursive invocation.
+
+Still building the call frame...
+
+Expanding the stack frame to 96 bytes to fit a loop index and spare slot alongside the count, names, values, and body pointer fields.
+
+Now I'm writing the argument-parsing loop: skip the opening paren, initialize the index to zero, then loop while index is less than count, calling parse_expr and storing each result into the vals array at the right offset before checking whether a comma separator is expected.
+
+Once arguments are exhausted, I consume the closing paren and start setting up the call environment -- pushing the current source position and old frame pointer onto the stack so they can be restored after the call, then pointing the frame register at rbp and preparing to set up the body pointer for execution.
+
+Now I'm realizing there's a subtlety with the live flag: calls should only happen when live=1, but I need to check whether parse_primary's identifier-call path gets reached even in dead mode, since that could cause unwanted evaluation during dead branches.
+
+To fix this, I'm adding a check at the start of the call-handling logic to branch to a dead-call path when r14 is 0 — in that path, I just consume the opening paren and parse the arguments with live=0, skipping evaluation entirely rather than looking up and invoking the function.
+
+Still structuring the call logic...
+
+I'm estimating stack usage for recursion depth 200 and confirming it stays well within default limits, then moving to sketch find_func, which scans the function table by name to return its entry pointer.
+
+Confirms the layout matches, then I'm writing lookup_name to resolve a variable: it checks the current frame's parameter list first (scanning names against the given index), falling back to globals if not found or if no frame exists.
+
+Still writing variable lookup code, now starting set_var which will search existing global variables before adding a new one...
+
+Confirming the calling convention matches up, then moving to print_num: converting a signed value in rdi to decimal digits, building the string backward into a buffer with newline handling and negative/zero cases.
+
+Still writing print_num logic...
+
+Checking edge cases: zero register usage, divisor clobbering, and the zero-value case where the loop should still execute once to emit a single '0' digit.
+
+I'm sizing the number buffer so it can hold up to 20 digits plus a sign, confirming it fits. I'm also reconsidering how CUR and END are tracked—moving CUR to memory instead of using rbp, keeping END in r15 since nothing else touches it, and double-checking whether freeing rbp is actually necessary given it's used as a frame base elsewhere.
+
+Actually since .call saves and restores rbp around its frame usage, rbp survives any call made from main. So I can just use rbp directly for CUR and r15 for END, no memory needed at all.
+
+I also check that parse_primary handles leading whitespace correctly, and decide to just treat parse_ternary as parse_expr directly rather than a separate wrapper. Then I start thinking through statement-level parsing: since function calls only appear within expressions, a bare identifier at statement start followed by '=' is the only assignment case I need to handle, though I still need to consider what happens with a standalone expression statement.
+
+For statement detection, I compare the identifier against print/def keywords, otherwise treat it as assignment, expecting an '=' sign, then parsing the expression and storing the variable. I verify the three-operand imul encoding for multiplying by 10 using an 8-bit immediate, and I'm now checking that comparison results are always set to 0 or 1 correctly even in edge cases.
+
+I trace through parse_cmp's loop structure, confirming the stack stays balanced across iterations: each loop pushes the current result, reads the next operator, and if a comparison operator follows, pops the left operand, computes the new boolean result, and jumps back to the loop top.
+
+I'm also checking parse_add and parse_mul follow the same pattern, then thinking through the operator-character handling to make sure I correctly distinguish single-character operators like '<' or '>' from two-character ones like '<=', '==', and '!='.
+
+Now I'm verifying parse_expr's ternary handling and confirming that parse_primary correctly terminates when it hits a closing paren or comma, trusting that well-formed expressions always leave primary expecting a valid value.
+
+For unexpected characters I'm just making the error path return zero safely. Given the sheer scale of this assembly program—likely several hundred instructions—hand-encoding every instruction with correct relative jump offsets is going to be extremely error-prone, but I'll proceed systematically, assigning labels and addresses before computing the final machine code.
+
+I'm planning the function order: _start, skip_sp, read_ident, find_func, lookup_name, set_var, print_num, and the parser chain from primary through ternary expressions, placing everything starting around file offset 0x78 and resolving call/jump displacements once the full layout is settled.
+
+To avoid miscounting offsets, I've decided to use uniform rel32 encoding for all calls and jumps—5 bytes for calls/jmps, 6 bytes for conditional jumps—trading a bit of size for predictable, easy-to-compute displacements.
+
+Now I need to carefully track running byte offsets from the code start while writing out each instruction, and figure out how to handle absolute addressing for data references since x86-64 defaults to RIP-relative addressing for displacement operands.
+
+Actually, a simpler approach is loading addresses into a register with a 32-bit immediate move, since addresses stay under 4GB and zero-extend automatically — that's cleaner for register-based data access. I'm laying out my memory map now: input buffer, variable count, function count, variable table, and function table at fixed addresses.
+
+I'm adding a buffer for number formatting, recalculating the total memory size needed, and deciding to set a generous p_memsz to be safe. Now I'm planning to write out the full instruction listing with precise byte sizes for each encoding, build an offset table as I go, then come back and fill in branch displacements once I know the final layout.
+
+Working through instruction sizes...
+
+Actually realizing r12 as a base register triggers the SIB-byte quirk in x86 encoding, needing a REX.B-extended SIB byte just to reference [r12] — adding complexity I should account for, and making me reconsider whether r12 is the best register choice for the pointer here.
+
+Instead I'm weighing whether to put p in a different callee-saved register, since rbp is needed for the frame and rbx gets used as scratch everywhere in my code. I could redesign to free up rbx as the dedicated register for p and shift scratch work onto other registers.
+
+I'll reassign the remaining registers: rbx as the source pointer, r13 for frame, r14 for live, r15 for end, and rbp doing double duty as the line cursor in the main loop and as the frame base during .call, restoring it afterward since the call path always preserves cur in rbx first.
+
+For displacement addressing with rbp, I need to always use an explicit disp8/32 since mod=00 with rbp base actually means disp32-only addressing. Now I'm going through and replacing r12 with rbx throughout, double-checking that read_ident's register usage (rax, rcx, rdx, r8) doesn't conflict with this change.
+
+I also need to redo main's register assignments since rbx is now reserved for p, and set up initial state: r13 as frame pointer, r14 as liveness flag, r15 as end pointer, rbp as cur. I'm starting to write the actual assembly, beginning with the stdin read loop into a buffer.
+
+Writing the read loop...
+
+I realize r8 is just scratch and free once I've set rbp as the cursor base and r15 as the end pointer, so I can simplify by keeping rbp fixed at the INPUT address throughout the read loop and computing r15 as INPUT+total afterward.
+
+Writing the line-parsing loop...
+
+Still writing def-parsing logic...
+
+Still writing parser logic...
+
+Writing identifier packing logic...
+
+But I realize r9 gets clobbered here, which conflicts with its use as a counter elsewhere in do_def's param loop—I need to pick different scratch registers for read_ident to avoid stepping on registers used by the caller.
+
+Thinking through the packing logic: instead of shifting by a variable amount using cl directly, I could track the shift amount separately from the length counter, incrementing it by 8 each time, since cl is tied up as part of the length register.
+
+Writing bit-shift logic...
+
+Finishing read_ident: it validates each byte is lowercase a-z, caps length at 8, packs characters into rax via shift, and clobbers rax/rcx/rdx/r8 while leaving rbx advanced and other registers preserved. Now I'm starting find_func which takes a name pointer in rax and searches for it, returning the result in rsi.
+
+Writing table lookup loop...
+
+Still writing lookup_name logic...
+
+I realize the register encoding for r13 as a base needs a displacement byte since its low bits alias rbp's encoding, so I'm adjusting the addressing to include an explicit zero offset rather than assuming a disp-less form.
+
+Still writing lookup loop...
+
+Adding guard checks for null pointer and zero count before entering the loop, so empty cases jump straight to the global fallback instead of comparing garbage data.
+
+Now I'm writing set_var: it scans the existing variable table looking for a name match, and if found updates its value in place, otherwise falls through to append a new entry.
+
+.svnew handles the append case by writing the name and value at the end of the table, then incrementing the nvars counter. I double-checked the pointer math confirms rdx correctly lands at VARS + nvars*16 after the scan loop, even when nvars starts at zero.
+
+Writing print_num logic...
+
+Now moving on to the expression parser, starting with parse_primary which skips whitespace and reads the next token.
+
+Writing character dispatch logic...
+
+Still writing parser...
+
+Now I'm moving on to parsing identifiers: reading the name, skipping spaces, and checking if the next character is an opening parenthesis to distinguish a function call from a variable lookup. For calls, I'm handling the live-call case by checking if r14 indicates liveness before resolving the function.
+
+For the actual call setup, I'm building a stack frame by copying the entry's fields (parameter count, slots, body pointer) into local storage, then consuming the opening parenthesis and beginning to loop through the argument list starting at index zero.
+
+Continuing the argument-parsing loop, each parsed expression is evaluated and stored into the argument slot array, with commas consumed between arguments until the index reaches the parameter count, after which the closing parenthesis is consumed. Then I switch environments by saving the current source position and frame pointer, and loading the target frame from the stored body pointer.
+
+For the dead-branch case, I'm writing code to still parse and consume each argument expression syntactically (advancing past commas and the closing parenthesis) but discard the results, since the function body isn't actually live.
+
+I'm double-checking the stack layout: vals array spans bytes 40 through 71, body pointer sits at 72, and loop index i at 80, so nothing overlaps within the 96-byte frame. I also confirm functions always have at least one parameter, so the n=0 edge case in the loop doesn't need special handling.
+
+Now I'm verifying the push/pop balance around the call: rbx and r13 get pushed before calling parse_expr, then popped afterward, followed by restoring rsp and rbp -- the stack stays balanced through the whole sequence.
+
+Each nested call to parse_expr establishes its own frame with its own rbp, so references like [rbp+...] inside that nested call correctly point to its own local frame rather than the caller's.
+
+Now I'm sketching parse_mul: it calls parse_primary first, then loops checking for '*', '/', or '%' operators to continue multiplying/dividing terms.
+
+For multiply it just pops and multiplies; for divide and modulo it checks a division-by-zero flag (r14), setting up operands via cqo/idiv with zero-division returning zero instead of crashing.
+
+Now I'm writing parse_add, which chains parse_mul calls and handles '+' and '-' operators by checking the current character, incrementing past it, recursing, then adding or subtracting the accumulated result. Writing subtraction logic...
+
+Then I'm implementing parse_cmp, which calls parse_add and loops to check for comparison operators like '<', '>', '=', and '!', branching to separate handlers for each case while peeking at the following character to distinguish operators like '<=' from '<'.
+
+Finishing the remaining comparison cases (==, !=) the same way, then jumping to the finalizer that zero-extends the flag result into eax and returns to the main loop. I'm double-checking the operand order in each cmp so that left/right semantics stay correct for each operator.
+
+Now I'm moving into parsing the ternary expression: after evaluating the condition via parse_cmp, I check for a '?' character, and if present I push the saved live-register state along with the condition value onto the stack before consuming the '?' and testing whether the condition is true to decide which branch to parse.
+
+Finishing the branch to return either the true or false value based on the condition, then verifying the stack offsets line up correctly at each push point so cond, oldlive, and trueval are read from the right positions.
+
+I also need to double-check the `and` with the live register and memory operand to confirm the 0/1 encoding stays consistent, and flag that `setne al` only sets the low byte so the rest of rax needs clearing.
+
+Now, with parse_expr fully defined as the entry point for both statement-level and recursive expression calls, I'm turning to assignment handling: after reading the identifier, pushing it, consuming '=', and calling parse_expr, I need the name popped into rsi and the value moved into rdi to match set_var's calling convention.
+
+I'm also confirming print works the same way, moving the parsed value into rdi before calling print_num, and verifying that after either statement type, rbp still points to the line start so the next-line scan from rbp to the newline works correctly.
+
+Checking buffer sizing: input is capped around 8000 bytes while the allocated buffer is 16KB, read in 4096-byte chunks with a sentinel byte appended, so there's plenty of room regardless of chunk count. I'm also considering the edge case where the final line has no trailing newline -- the line still gets processed normally before the next-line scan, but that scan would then hit the sentinel zero instead of a newline, which needs to be treated as end-of-input.
+
+Now I need to turn the whole instruction sequence into actual bytes, tracking offsets carefully so I can patch relative jump targets later. I'll work through this block by block, noting each instruction's length and address as I go.
+
+Still computing opcode byte encodings...
+
+Encoding register moves and memory load/store instructions...
+
+Still computing instruction encodings...
+
+Continuing the read loop: testing rax for EOF to exit via jle, otherwise advancing the buffer pointer by the bytes read and looping back, then at the done label writing a null terminator byte at rbp+r9 using a ModRM/SIB encoding with REX.X for the index register.
+
+Working out the encoding for moving rbp into r15...
+
+Encoding the add instruction and continuing to the comparison in the main loop...
+
+Still encoding instructions...
+
+Writing comparison and jump instructions...
+
+Still encoding instruction bytes...
+
+Still tracing instruction encodings...
+
+Still encoding instructions...
+
+Still encoding instructions...
+
+Still encoding instructions...
+
+Finishing the exit syscall, then encoding the skip_sp routine, which scans forward past space characters until it finds a non-space byte and returns.
+
+Now I'm writing read_ident: it zeroes the accumulator and counter, then loops reading bytes and checking if they fall in the lowercase letter range, limiting identifiers to 8 characters.
+
+Still encoding instructions...
+
+I finish out the loop with OR-ing into rax, incrementing counters, and jumping back, then hit the ret for Lrid. Now I'm starting the find_func routine, which takes a name in rax and returns a result in rsi, beginning with loading a base address into r8d.
+
+Still encoding assembly instructions...
+
+Still encoding instructions...
+
+Still computing instruction encodings...
+
+Still encoding instructions...
+
+Now I'm moving to set_var, which looks up a variable by name starting at the head of a linked list, comparing rsi against stored keys and falling to Lsvnew if the list is empty.
+
+Continuing the loop: compare the current entry's name against rsi, jump to Lsvset if matched, otherwise advance to the next 16-byte entry and decrement the counter, looping back until found. At Lsvset, I write the new value into the entry's value slot.
+
+Encoding the increment-and-store-back sequence, then moving to print_num, setting up by copying rdi into rax to begin printing the number.
+
+Still writing machine code...
+
+Still encoding instructions...
+
+I finish the sys_write syscall for printing the number, then move into encoding parse_primary, starting with a call to skip_sp.
+
+Now I'm checking the next character: if it's an open paren, jump to the paren-handling branch; otherwise test whether it falls in the '0'-'9' digit range and jump to number parsing accordingly.
+
+Still tracing the byte checks...
+
+Still tracing the digit-parsing loop...
+
+Now I'm moving into the identifier parsing routine, which calls read_ident, then skips whitespace, and checks whether the next character is an opening parenthesis to decide if this is a function call.
+
+If it's a call (Lpcall), I pop the saved address back, verify r14 isn't zero (jumping to a dead state if so), then call find_func to resolve the function name into rsi, before setting up a new stack frame with a saved base pointer and allocating 96 bytes of local space for the call.
+
+Continuing to encode the sequence of mov instructions copying each field from rsi into rbp's stack frame...
+
+Encoding more instruction bytes...
+
+Still decoding instructions...
+
+Still decoding instructions...
+
+Then the function wraps up with stack cleanup and a return. After that I'm tracing into a dead-parse label that advances past the pointer, skips spaces, and checks for a closing paren character.
+
+Continuing the trace, I'm following the comma-separated argument list loop: after parsing an expression and skipping spaces, it checks for a comma to continue looping back, or falls through to the closing-paren check otherwise.
+
+Then I move into tracing parse_mul, which starts by calling parse_primary, pushing the result, and skipping spaces before checking the next byte for a multiplication-related operator.
+
+Checking for '*', '/', or '%' operators, branching to the appropriate handler for each, or popping and returning the primary value if none match. For multiplication, I increment past the operator, parse the next primary, pop the left operand, and multiply them with imul before looping back to Lpml. For division, I do the same setup and am now checking if r14 (likely a flag or divisor register) is zero, presumably to guard against division by zero.
+
+I handle the zero case by jumping to Lpmdz which just zeroes eax and returns, otherwise I sign-extend with cqo and perform idiv before jumping back to Lpml. Now I'm starting the modulo handler the same way, incrementing past the operator and calling parse_primary again.
+
+Still encoding instructions, then handling the divide-by-zero case by jumping past the modulo logic to set the result to zero before continuing to the main loop.
+
+Now I'm moving into the parse_add routine, which calls parse_mul and pushes the result onto the stack before skipping whitespace to check for the next operator.
+
+Tracing further, I'm checking whether the next character is a '+' to jump to an addition branch, otherwise continuing to test for '-' for subtraction.
+
+Still tracing the byte-level encoding...
+
+Still tracing opcode offsets...
+
+Continuing the byte-by-byte trace...
+
+Still assembling comparison opcodes...
+
+Still tracing opcode offsets...
+
+Now I'm moving into the ternary expression parser, which evaluates the comparison first, then checks if a '?' character follows to decide whether to branch into the true/false ternary logic.
+
+Still tracing instructions...
+
+Still encoding instructions...
+
+Total code size comes out to 1713 bytes, and now I'm moving on to recording the relative offsets for each label starting with _start and Lrdloop.
+
+Mapping out more label offsets... read_ident, find_func, lookup_name, set_var, print_num, and parse_primary routines with their internal jump targets through the assembly layout.
+
+Continuing through parse_call, parse_mul, parse_add, and parse_cmp sections, tracking each label's byte offset as I trace the function boundaries deeper into the binary.
+
+Now I'm computing the actual rel32 displacement for each branch instruction — subtracting the address immediately after each branch from its jump target to get the signed offset value.
+
+Still computing relative jump offsets...
+
+Still computing relative offsets...
+
+Still computing jump offsets...
+
+Still computing jump offsets...
+
+Still computing jump offsets...
+
+Still computing jump offsets...
+
+Computing more relative offsets...
+
+Computing more relative jump offsets...
+
+Still computing jump offsets...
+
+Still computing jump offsets...
+
+Still computing jump offsets...
+
+Still computing relative offsets...
+
+Computing more offsets...
+
+Still computing jump offsets...
+
+Still computing jump offsets...
+
+Now I'm cross-checking that I've accounted for every call and jump instruction in main, going back through the earlier offsets to make sure none were missed or mislabeled.
+
+Still mapping more call offsets...
+
+Still computing relative offsets...
+
+I'm now cross-checking I haven't missed any call or jump instructions, including ones at offsets 235, 1066, and 1079, and I need to verify subtle memory operand encodings involving the rbp base register with mod01 addressing.
+
+I also verify the cmp against [rbp+0] uses the correct opcode for unsigned comparison so the jae branch behaves correctly for i>=n, and confirm the zero-initialization store at [rbp+80] is encoded properly with the right ModRM and displacement bytes.
+
+Checking the identifier parsing path, I trace the push/pop of rax around the name lookup versus function-call branches — each path balances with exactly one push and one pop, so the stack stays consistent whether it's a variable reference or a call to Lpcall.
+
+The subsequent rbp/rsp setup doesn't touch rsi, so it stays valid through the parameter copying, and needed data gets stashed into the frame before parse_expr calls in the arg loop can clobber rsi. I also confirm r13 still points to the caller's frame while evaluating each argument expression, which is correct since we haven't switched frames yet.
+
+Between arguments, I need to skip whitespace and consume the comma separator before parsing the next argument — since parse_expr already skips leading spaces itself, this should work correctly, assuming the next non-space character really is a comma.
+
+Checking do_def now: after the function name is read and spaces skipped, the '(' gets consumed, then the slot offset is computed before entering the parameter loop, which first checks for an immediate ')' to handle zero-param cases, otherwise reads the first identifier. I'm also verifying that keyword detection at statement start reads "def" correctly, stopping right at the opening paren.
+
+For an assignment like "x = 5", the identifier reader grabs "x", then spaces are skipped and the '=' is consumed before parsing the expression that follows. I also want to confirm "print x" works similarly—reading "print" as the keyword, jumping to do_print, which then parses the trailing expression starting right after the keyword.
+
+For do_def, the body pointer gets stored pointing right after the '=', even if there are leading spaces—parse_expr's own space-skipping will handle that correctly later during evaluation. After storing everything in do_def, execution jumps to the next-line handler.
+
+Checking the input-reading logic, I confirm rbp stays fixed as the input base throughout the read loop while r9 tracks the offset, so rbp still correctly points at the current line start afterward, and r15 gets set as the end pointer by adding the total length to rbp. Now I'm laying out the file structure with the ELF header at offset 0, the program header at 0x40, and the code starting at 0x78.
+
+Working out that the code section spans 1713 bytes, giving a filesz of 0x729, and setting the program header fields: p_vaddr 0x400000, p_offset 0, p_filesz 0x729, p_memsz 0x20000 to cover the BSS region through the NUMBUF buffer, with RWX flags and standard alignment. I'm double-checking that all data addresses, including the BSS at 0x410000, stay within the single mapped segment's bounds, and noting that the kernel will zero-fill the memory beyond the file's actual byte count.
+
+Now I'm constructing the raw ELF header bytes field by field -- the magic number and identification bytes for a 64-bit little-endian executable, followed by the type, machine (x86-64), and version fields.
+
+Then I'm computing e_entry, e_phoff, e_shoff, flags, and the various size/count fields, verifying everything sums to exactly 64 bytes for the header, before moving on to the program header.
+
+Now I'm laying out the single PT_LOAD segment's fields—type, flags, offset, virtual/physical addresses, file size, memory size, and alignment—confirming it totals 56 bytes, then double-checking the p_filesz value of 0x729.
+
+Verifying the code length comes out to 1713 bytes starting at offset 120, giving a total file size of 1833 (0x729), which matches. Now I'm assembling the actual machine code byte-by-byte in sequence, starting with the _start routine's initial instruction setting ebp to 0x410000...
+
+Writing opcode bytes...
+
+Writing more assembly...
+
+Still writing assembly listing...
+
+Still writing assembly listing...
+
+Still writing assembly code...
+
+Still writing identifier parsing assembly...
+
+Now I'm tracing into a new function starting at o450, which loads an address and begins testing a pointer in a loop structure.
+
+Still writing assembly...
+
+Still tracing the global lookup loop...
+
+Writing more assembly...
+
+Still writing number-to-string conversion...
+
+Now I'm moving into parse_primary, which skips whitespace, reads the next byte, and branches depending on whether it's an opening parenthesis or a digit.
+
+Still writing assembly...
+
+Continuing the identifier parser, after skipping whitespace it checks for an opening parenthesis to distinguish a function call from a plain name lookup, then branches to either call lookup_name or handle the call case by checking if there's a function pointer before invoking find_func.
+
+Now I'm setting up a stack frame for the call handler, copying several fields from the context structure into local stack slots for later use.
+
+Still tracing the argument-parsing loop...
+
+Still writing assembly...
+
+Finishing up parse_dec with its comma/paren handling, then moving into parse_mul, which calls parse_primary and loops checking for '*' after skipping whitespace.
+
+Writing multiply and divide opcodes...
+
+Still writing modulo division logic and the jump back into the main loop, then wrapping up the zero-division case before moving into the parse_add function which starts by calling parse_mul...
+
+Continuing the assembly for parse_add, implementing the loop that skips spaces, checks for '+' or '-' operators, and branches accordingly to handle addition or subtraction...
+
+Writing comparison parser assembly...
+
+Now I'm encoding parse_cmp, which calls parse_add then checks for comparison operators like '<' by comparing the current character against 0x3c.
+
+Still writing comparison opcodes...
+
+Still writing comparison opcodes...
+
+Still writing assembly...
+
+Still writing assembly logic...
+
+The code finishes handling the true/false branches and returns the appropriate value, ending at offset 1713. Now I want to double-check a few critical details before moving on.
+
+Verifying remaining encodings...
+
+Still verifying opcode encodings...
+
+Working out the full byte sequence confirms REX 4B, ModRM 0x54, SIB 0xCB, disp8 0x10 for that lea instruction. Now I'm checking the next one: lea rsi,[rbp+r9] needs B=0, X=1, R=0, W=1, giving REX=0x4A.
+
+Verifying mov [rdx+rcx*8],rax uses no extended registers, so REX.W alone (0x48) with ModRM 0x04 and SIB 0xCA checks out. Now I'm working through mov byte [rbp+r9],0, needing REX.X=1 for r9 as index with rbp as base, giving REX=0x42, then building the ModRM and SIB bytes for that disp8 addressing mode.
+
+Checking the lea rsi,[r13+8] and lea rdi,[r13+40] encodings — both need REX.W+B since r13 is the extended base register, with ModRM reg fields set to rsi and rdi respectively and matching disp8 values. Both confirm correctly.
+
+Moving on, I verify mov rcx,[r13], mov r9,[rsi], and cmp r9,rax encodings — checking REX prefixes for extended registers, ModRM byte construction for each addressing mode, and confirming the cmp instruction correctly computes r9 minus rax. All three check out.
+
+Verifying more encodings... checking mov rax,[r8], [r8],rax, [r8],rcx, and r10,rax all encode correctly with REX.B set for r8/r10 as the rm field.
+
+Verifying ModRM encodings... continuing through the remaining mov and cmp instructions, each checking out correctly against register and displacement fields.
+
+Still verifying encodings...
+
+Still verifying ModRM encodings...
+
+Still verifying encodings...
+
+Still verifying mov/add/sub ModRM encodings...
+
+Still verifying encodings...
+
+Verifying the remaining register encodings... test and xor instructions with r13, r9, r8 all check out correctly with their REX prefixes and ModRM bytes.
+
+Still verifying encodings...
+
+Continuing to verify the register encodings... add rsi/rdi/rdx/rbx with various immediates and inc rbx all check out against their expected ModRM bytes.
+
+Still verifying encodings...
+
+Verifying rcx-rax, then checking the mov immediate encodings for rbp, edx, ecx, esi across several offsets—all confirming correct zero-extension to 64-bit registers.
+
+Checking test al,al and test rax,rax encodings, then verifying the conditional jump offsets at o1611 (je Lpt_yes) and o1699 (jnz Lpt_true), confirming the rel displacements match the target and next-instruction addresses correctly.
+
+Looking at parse_expr's handling of the no-ternary case, it correctly pops and returns the condition value. I'm also tracing how the live flag r14 is saved and restored across ternary expressions, making sure r14d is set with a 32-bit mov that zero-extends into the full 64-bit register.
+
+Then I'm verifying the nested ternary logic: for "a ? b : c", the true branch correctly parses as its own sub-expression, stopping at ':' before consuming the colon and proceeding to parse the false branch.
+
+Checking right-associativity with "a ? b : c ? d : e" confirms the false branch correctly recurses into another ternary, and testing a lower-precedence true branch like "a ? b+c : d" also parses correctly since parse_expr handles addition before checking for another '?'. I'm now wondering whether the true branch parsing could accidentally consume a ':' meant for an outer context.
+
+Since conditions use parse_cmp rather than parse_expr, a ternary condition can't itself be another ternary, which matches the intended lowest-precedence right-associative grouping, and the condition is always evaluated regardless of liveness while branches inherit adjusted live flags. Now I'm considering how dead branches handle function calls and division safety when going through the primary-call dead path.
+
+Multiplication, addition, and subtraction in dead branches still compute using possibly meaningless values since names resolve to 0, but that's harmless since nothing traps. Numbers still parse normally in dead branches, and identifiers get looked up via lookup_name regardless of liveness (since it's side-effect free), though this raises the question of what happens if a dead branch references an undefined name.
+
+Given the guarantee that every name is defined before use, even dead-branch names should be defined, but even if not, lookup just returns 0 — no issue. Function calls inside dead branches parse their arguments without actually invoking the lookup/execution logic, and nested calls within those dead arguments stay dead too, which is consistent.
+
+Now I want to trace through actual recursion, like a factorial-style function `f(n) = n<2 ? 1 : n*f(n-1)`, evaluating `f(3)` live — starting with identifying `f`, opening the parenthesis, treating it as a live call, finding the function definition, building a frame with parameter `n`, and parsing the arguments.
+
+Tracing through evaluation: the argument `3` gets parsed and stored as `n=3`, then the body `n<2 ? 1 : n*f(n-1)` is evaluated — the comparison resolves `n<2` to `3<2=0`, so the condition is false. Since the ternary's true branch becomes dead (live=0), the `1` is still parsed structurally but discarded, while the false branch stays live and continues parsing the `n*f(n-1)` expression.
+
+I'm now recursively evaluating `n*f(n-1)`: with `n=3` the recursive call computes `f(n-1)=f(2)`, which in turn calls `f(1)`, which hits the base case `1`. So `f(1)=1`, `f(2)=2*1=2`, `f(3)=3*2=6`. I need to be careful that while evaluating the argument expression `n-1`, the current frame pointer still refers to the caller's `n` since the frame switch hasn't happened yet.
+
+I'm also checking the argument count mechanism, which reads the parameter count from the function's stack slot to know how many arguments to parse — for `f` that's 1, which matches. Variable lookup checks local parameters before falling back to globals, which seems right. I'm also tracing through how the call saves the old base pointer, stack pointer, and frame register onto the stack before setting up the new frame.
+
+Verifying the pop sequence on return — restoring the frame register, then the body pointer, deallocating the 96-byte frame, and finally restoring the base pointer — all balance correctly with the earlier pushes, so the stack discipline checks out.
+
+Right, during arg evaluation rsp equals rbp since no pushes have happened yet, so the sub-calls only write below that point while the frame slots at rbp and above stay untouched—so the layout is safe as long as pushes only ever move rsp downward.
+
+Block stays preserved since sub-calls push below rsp rather than into our frame. I'm verifying consistency: params names live at rbp+8..39, values at rbp+40..71, with r13 as frame base matching lookup_name's offsets, and count stored at r13+0 — all lines up. I'm also checking find_func's not-found fallback, which should be safe since it only triggers on invalid input, and now I'm looking at a jz branch condition to confirm its logic.
+
+I'm also confirming the packed-constant comparisons for keywords like "print" and "def" — since read_ident packs up to 8 characters into a register with unused upper bits zeroed, "print" (5 letters) and "def" (3 letters) match their expected constants exactly, and no valid variable name could collide with these since keywords are reserved. I'm now checking a partial match case like "pri" to make sure its packed value differs from the "print" constant.
+
+Then I check assignment parsing for a simple variable like "p = 5" and confirm read_ident correctly identifies it as a non-keyword identifier before falling into assignment logic. I also consider the edge case of "print" followed immediately by a newline with no expression, tracing through parse_expr to see it defaults to printing 0 when no valid primary token is found. Finally, I'm verifying the stdin reading loop handles partial reads correctly by continuing to call read until it returns zero, even if a pipe delivers data in smaller chunks than the buffer size.
+
+Now I trace the exit path: once all lines are consumed or a sentinel byte is hit, the program jumps to a final exit(0) call, and I confirm that an empty input (total bytes = 0) correctly triggers immediate exit since the current pointer equals the end pointer right away. I also flag a potential bug where the code advances past the '=' character in an assignment without actually verifying it's an equals sign, which could cause issues if spacing or unexpected characters appear.
+
+Walking through examples like "x = 5" and "x=5" confirms the space-skipping and pointer advancement logic works correctly in both cases, including multiple spaces. I then move to tracing the "def f(a,b) = a+b" statement, following how the identifier reader picks up "def" as a keyword and dispatches into the function-definition handler, which then skips whitespace and reads "f" as the function name.
+
+Continuing through do_def, I trace the parameter-parsing loop: skipping spaces, consuming the opening paren, reading each identifier ("a" then "b"), incrementing the parameter count, and checking for commas versus the closing paren to know when to stop. After consuming the closing paren and the "=" sign, I store the body pointer at the remaining text and increment the function count, verifying the body correctly points to "a+b".
+
+Checking the param loop handles no-param calls fine, and confirming body expression parsing stops correctly at newline or end-of-input sentinel. I'm also noting the identifier reader assumes names stay within the 8-letter limit per spec, so longer names would misbehave but that's out of scope.
+
+Verifying signed/unsigned comparisons for small positive counts are safe, and double-checking the jump offset calculations for the comparison branches and the skip_sp call resolve to the correct relative displacements.
+
+Continuing to verify the remaining offset calculations for print_num, skip_sp, and read_ident calls through the rest of the jump table, checking each branch target against expected byte offsets.
+
+Still verifying jump offsets...
+
+Continuing to verify jump offsets through the parser logic, checking calls to skip_sp, parse_expr, and various branch targets like Lpnd, Lperr, Lpid, and Lppar -- all offsets confirmed correct so far.
+
+Still verifying call/jump offsets...
+
+Still verifying jump offsets...
+
+Still verifying offsets...
+
+Still verifying jump offsets...
+
+Rest of the offsets check out. I'm now verifying the negative hex conversions by computing two's complement for each value, confirming subtractions like -425, -494, -525, -551, and -440 all match their expected hex forms.
+
+Still verifying two's complement conversions...
+
+Finishing the two's-complement checks, I'm now ready to assemble the full file: header, program header, and code section totaling 1833 bytes, writing out the ELF header bytes and then the instruction stream in order.
+
+Still mapping out the ELF header bytes...
+
+Filling in the rest of the program header fields - flags marking it readable/writable/executable, offset, virtual and physical addresses at 0x400000, file size of 0x729 bytes, and memory size and alignment values.
+
+Transcribing the machine code instructions byte by byte...
+
+Still tracing through the disassembly...
+
+Still writing assembly...
+
+Still tracing disassembly...
+
+Still tracing disassembly...
+
+Still tracing assembly...
+
+Still tracing disassembly...
+
+Still tracing disassembly...
+
+Still tracing disassembly...
+
+Still tracing disassembly...
+
+Still tracing disassembly...
+
+Still tracing the assembly comparisons...
+
+Still tracing instruction bytes...
+
+Now I'm double-checking some instruction lengths to make sure the byte offsets align correctly at key points in the disassembly.
+
+Total file size works out to 1833 bytes, which matches the filesz field. Now I'm checking register preservation in do_def — confirming that r11, r9, and r10 survive across the skip_sp and read_ident calls since those only touch rax, rbx, rcx, rdx, r8, and tracing through where r10 (the function name) gets stored into its slot afterward.
+
+Verifying the slot computation sequence loads NFUNCS into r8, shifts and adds the FUNCS base, landing the slot address in r11, and confirming that other helper functions like find_func only clobber their documented registers (rsi, rcx, r8) so the pcall logic that pops the name and checks the result stays consistent.
+
+Now I'm tracing print_num on an example value of 6 to confirm the division loop correctly builds the digit buffer backwards, writes the newline terminator, handles the sign flag staying zero for positives, and computes the final buffer length from the pointer difference.
+
+For -6, I verify the negation sets r9=1, the digit '6' gets placed before the newline, and the sign check prepends '-' while adjusting the length to 3, yielding "-6\n" correctly.
+
+Now checking the zero case to make sure the loop still emits a single '0' digit before exiting.
+
+I'm also confirming the division semantics match C truncation toward zero for negative operands, so -7/2 gives quotient -3 and -7%2 gives remainder -1, with the sign following the dividend as expected.
+
+For comparisons, I trace through how the result is set into dl via setl and then zero-extended into eax at the finish label, confirming nothing clobbers dl between the comparison and the jump, so the comparison result correctly becomes the new left operand pushed onto the stack.
+
+Technically the code could chain comparisons via the loop structure since it jumps back to push the result and check for another operator, but since the spec says comparisons are never chained, that's fine either way. I also verify the no-operator path simply pops and returns the addition result directly.
+
+Checking the push/pop balance across the whole chain: each loop iteration pushes once and pops exactly once, whether through the operator branch or the fallback return, so the stack stays balanced through the comparison and addition handling.
+
+I'm also tracing parse_primary for identifier and call cases, confirming the pushed name gets popped, and that rbp/rbx/r13 pushes used for the call setup are each matched by a corresponding pop later on.
+
+Moving to parse_ternary, I'm checking the stack discipline: condition is pushed, then old-live flag, then the true-branch value (three pushes total), and these are popped back out symmetrically (three pops) after evaluating the false branch, keeping the stack balanced through the whole operation.
+
+Checking the offsets confirms the stack reads line up correctly for both cond lookups. Now I'm verifying the actual machine code bytes for the memory-indexed mov instruction to make sure the ModRM and SIB encoding are right.
+
+Turning to runtime behavior, I confirm the RWX single-segment mapping works since execute permission is granted and the entry point lands on valid code after the ELF headers. I also reason that since the kernel hands us a valid initial stack pointer with argc/argv, we don't need to set up rsp ourselves, and any initial stack misalignment won't matter since there are no external calls relying on ABI alignment.
+
+I also verify that since registers start at zero except rsp, I need to explicitly initialize rbp to point at the input buffer and clear r9 myself. Checking the syscall conventions, I note that Linux syscalls only clobber rax, rcx, and r11, so rbp stays intact across the read loop.
+
+The address computation builds the buffer pointer from INPUT+total, and the loop accumulates bytes read into r9 so subsequent reads append correctly, with a null sentinel written right after the data. I'm checking that the 8000-byte input plus sentinel stays safely within the 16KB buffer region before the variables and functions areas start.
+
+Since the spec caps input at 8000 bytes, INPUT only extends to 0x411F40, well clear of NVARS at 0x414000, so there's no collision risk. I'm also verifying that r9 as a scratch register inside do_def's helper calls (skip_sp, read_ident) doesn't get clobbered since those functions never touch it.
+
+I'm checking that the pcall argument loop reloads its index from memory each time rather than keeping it live across parse_expr calls, which avoids clobbering issues, and confirming rbx is properly saved and restored around the call body so control returns correctly to parse_primary afterward.
+
+With r13 restored on return and the frame pointer handling correct, top-level expressions (where r13=0) correctly fall through to global lookup in lookup_name.
+
+Parameters take priority over globals of the same name, matching the spec that function body identifiers refer to parameters first. Call argument counts always match parameter counts per spec, so I don't need to handle mismatches, and param parsing already skips spaces correctly before checking for ')'.
+
+I'm now double-checking the comparison logic for the '=' operator handling.
+
+Since '=' only appears as part of '==' inside expressions (assignment is handled separately at statement level before parse_expr), consuming two bytes is correct. The same reasoning applies to '!' always being '!=', and '<'/'>' already covering their '<='/'>=' variants, including inside ternary conditions. The expression grammar's precedence chain flows from ternary down through comparison, addition, multiplication, to primary expressions.
+
+Multiplication/division/modulo bind tighter than addition/subtraction, which bind tighter than comparisons, which bind tighter than the ternary operator -- matching the spec. All comparison and equality operators sit at the same precedence level in a left-associative loop, which also matches the spec's grouping.
+
+I trace through "print 1+2*3" to confirm it evaluates to 7, correctly respecting multiplication before addition. Now I'm ready to assemble the final binary: concatenating the ELF header, program header, and generated code sections into the complete hex dump.
+
+I verify the entry point lands at file offset 0x78 (virtual address 0x400078), matching where the code begins, then assemble the raw instruction bytes in sequence.
+
+Still writing machine code...
+
+Still tracing disassembly...
+
+Still tracing assembly...
+
+Still tracing the disassembly...
+
+Still tracing disassembly...
+
+Still disassembling the division routine...
+
+Still tracing the disassembly...
+
+Still tracing disassembly...
+
+Still tracing disassembly...
+

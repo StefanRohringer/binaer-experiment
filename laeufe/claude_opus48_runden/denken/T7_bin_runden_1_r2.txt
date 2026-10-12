@@ -1,0 +1,22 @@
+I'm tracing through the parser's recursive descent structure—parseExpr handling addition/subtraction, parseTerm handling multiplication/division, and parseFactor handling numbers and parentheses—to find why 2*(3+4)-5 produces 77 instead of 9. I suspect the issue lies in how numbers are parsed within parseFactor, possibly related to whitespace handling.
+
+Continuing the trace: pop 2, multiply with the result of the paren expression, which itself recurses into parseExpr evaluating '3+4'. Following through, parseTerm reads '3', then parseExpr sees '+', advances to '4' and calls parseTerm again to continue adding.
+
+Continuing the trace: subtract 5 from 14 to get 9, then push and check for more operators, hitting end of line with nothing left to pop but 9 — so the computed result should be 9, yet the actual output is 77. That mismatch makes me suspect the problem lies in how the input buffer is being read rather than in the parsing logic itself.
+
+The input buffer sits right after the code segment within the file, which seems fine and doesn't overwrite anything. I'm still stuck on why the result comes out to 77, so I'm double-checking whether factor parsing properly skips spaces before reading numbers.
+
+I'm now tracing through the parenthesis-handling branch of parseFactor, verifying the jump logic for detecting '(' and ensuring skipspaces runs at the right point before the character read.
+
+Actually, I think I found the bug: skipspaces overwrites the low byte of rax (al) with the current character, so when returning from the parenthesized expression, the computed result of 7 gets clobbered by the ')' character code (0x29), producing 41 as the returned value instead of 7.
+
+Tracing it through: parseTerm then multiplies 41 by 2 to get 82, pushes it, skips the '-' character which clobbers al again, then returns 82 up to parseExpr.
+
+Continuing, parseExpr subtracts: push 82, skip '-', parse the next term which correctly parses the number 5, then 82 - 5 = 77 — that confirms the discrepancy. The root cause is skipspaces clobbering the al register and therefore corrupting rax after the paren-case return, so the fix needs to preserve rax across skipspaces calls or restructure the return path.
+
+Actually, looking more carefully, the skipspaces call right before returning from the paren branch is redundant since parseExpr already calls skipspaces internally before checking for an operator, so r15 is already positioned past any spaces by the time it returns.
+
+I'm considering just nopping out the redundant skipspaces call at that address, replacing its five bytes with nops so the offsets stay aligned, rather than trying to preserve rax across it. Still need to confirm skipspaces is actually unnecessary there by checking what happens after parseExpr returns and pops rax.
+
+Checking other call sites, only the paren branch reuses the return value in rax without reloading, so I only need to patch that one call instruction to nops. I'm locating the exact byte sequence for that call in the hex dump to confirm where to apply the patch.
+

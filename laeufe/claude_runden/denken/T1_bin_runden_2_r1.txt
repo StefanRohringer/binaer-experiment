@@ -1,0 +1,4 @@
+I'm laying out a minimal ELF64 header plus a single program header totaling 120 bytes, with code loaded at a fixed virtual address, then writing the syscall instructions for a basic write/exit sequence using a sys_write call pointing to a message string.
+
+Filling in the program header fields for a readable/executable loadable segment spanning the whole file, then assembling the final machine code bytes for the syscall sequence and the "Hallo Welt\n" string.
+

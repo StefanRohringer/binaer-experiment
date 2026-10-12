@@ -1,0 +1,33 @@
+The user wants a complete C program for Linux that:
+- Prints exactly "Hallo Welt\n" to stdout
+- Exits with exit code 0
+- Can be compiled with "gcc -O2"
+- Can use the standard C library
+
+They want the output formatted as:
+BEGIN_C
+(code)
+END_C
+
+This is straightforward. I'll use printf or puts. Let me use printf to print "Hallo Welt\n".
+
+Actually, let me think about this. The program should:
+1. Print "Hallo Welt" followed by a newline to stdout
+2. Exit with code 0
+
+A simple main function returning 0, with a printf call, is perfect.
+
+Let me write it cleanly:
+
+```c
+#include <stdio.h>
+
+int main(void) {
+    printf("Hallo Welt\n");
+    return 0;
+}
+```
+
+This is correct. `printf` writes to stdout by default, and returning 0 from `main` gives an exit code of 0. The string "Hallo Welt\n" is exactly "Hallo Welt" followed by a newline.
+
+The user is German-speaking, so I should respond in German, but the code itself is universal.

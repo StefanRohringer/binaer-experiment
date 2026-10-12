@@ -1,0 +1,52 @@
+I'm planning a raw ELF64 executable for x86-64 Linux that reads a line from stdin, reverses it excluding the newline, and writes it back followed by a newline before exiting cleanly—working through the syscalls for read, locating the newline in the buffer, and structuring the output logic.
+
+For the binary layout, I'll use a single RWX loadable segment starting at 0x400000, placing the buffer space after the code by setting memsz larger than filesz so the segment includes writable scratch memory without bloating the file.
+
+Now I'm drafting the entry point logic: read up to 201 bytes from stdin into the buffer, check if it's empty and exit early if so, then trim a trailing newline by comparing the last byte to 10 and decrementing the length if found, leaving the remaining length in a register for the reversal step.
+
+Writing reversal loop...
+
+Mapping out the ELF memory layout — header and program header sizes, code starting offset, and where to place the buffers so memsz covers them beyond the file size without bloating the file.
+
+Setting p_memsz to 0x1200 bytes, confirming the kernel will zero-fill the page containing the buffer region since it extends beyond filesz. Now I'm ready to assemble the actual machine code bytes.
+
+Writing syscall instructions...
+
+Still writing syscall and byte-addressing logic...
+
+I realize I need to correct the jump offset—dec rcx is 3 bytes, so the jne needs rel8 of 3, not 1, to properly skip over it. Now I'm setting up the reverse pointer by computing rsi as buf + rcx - 1 using a lea instruction.
+
+Still writing reverse loop...
+
+Writing more machine code bytes...
+
+Now checking the earlier jle instruction's branch offset — target "done" at 97, jump source ends at 21, so rel8 = 76 (0x4C), which fits fine within the signed byte range.
+
+I'm re-verifying each instruction's cumulative offset from the start: xor edi,edi (2 bytes) brings us to offset 2, the mov esi (5 bytes) to 7, mov edx (5 bytes) to 12, xor eax,eax (2 bytes) to 14, syscall (2 bytes) to 16, test rax,rax (3 bytes) to 19, and jle done (2 bytes) confirms it lands exactly where expected.
+
+Continuing the offset tracking... mov rcx,rax takes us to 24, loading a byte from the buffer brings it to 30, comparing against the newline value to 33, the conditional jump to 35, decrementing rcx to 38, then computing a pointer with lea to 45, and loading another address into edi to 50 before setting up rdx from rcx for the next write syscall.
+
+Still writing syscall instructions and computing exit logic, then I'm cross-checking the jump targets against instruction offsets to make sure the jle branch lands correctly.
+
+jmp reverse_loop checks out too: -20 encodes correctly as 0xEC. Total code size comes to 106 bytes, and since buf/outbuf are absolute addresses they stay valid regardless of where the code sits. Now I'm laying out the file: ELF header first, then the program header at 0x40, then the code starting at file offset 0x78.
+
+Checking sizes, the code ends at 226 (0xE2), so filesz = 226. Memsz needs to cover both buffers up through roughly 0x4011CA, so I'll just set memsz to 0x2000 for safety, and I need to confirm p_vaddr and p_offset stay congruent mod the alignment (0x1000), which they do since offset is 0 and vaddr is 0x400000.
+
+Still writing ELF header fields...
+
+Finishing the program header fields and assembling the full byte sequence for the ELF header...
+
+Writing the machine code bytes...
+
+I verify the total file size adds up to 0xE2, matching the expected filesz, and confirm using absolute 32-bit addresses for esi/edi works fine since they zero-extend into the valid buffer region within the mapped segment.
+
+The second page at 0x401000 falls within the memsz range beyond filesz, so the kernel zero-fills it automatically, which handles the buffer correctly. I also confirm edx=201 covers the full 200-character input plus newline, and that cases with no trailing newline or empty input (EOF) are handled properly since the code just keeps whatever length was read.
+
+Now I'm assembling the final byte-by-byte hex dump of the ELF header and program header to produce the complete output.
+
+Still tracing through the syscall exit logic and double-checking my byte count matches the expected 106-byte code length.
+
+Still tracing the syscall sequence...
+
+This matches my grouped version, so I'm confident the bytecode is correct and ready to output in full.
+

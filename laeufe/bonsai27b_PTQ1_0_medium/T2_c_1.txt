@@ -1,0 +1,10 @@
+BEGIN_C
+#include <stdio.h>
+
+int main(void)
+{
+    long result = 12345L * 6789L;
+    printf("%ld\n", result);
+    return 0;
+}
+END_C

@@ -1,0 +1,26 @@
+BEGIN_C
+#include <stdio.h>
+#include <string.h>
+
+int main(void)
+{
+    char buf[512];
+    size_t len, i;
+
+    if (fgets(buf, sizeof buf, stdin) == NULL) {
+        buf[0] = '\0';
+    }
+    len = strlen(buf);
+    if (len > 0 && buf[len - 1] == '\n') {
+        buf[--len] = '\0';
+    }
+    for (i = 0; i < len / 2; i++) {
+        char t = buf[i];
+        buf[i] = buf[len - 1 - i];
+        buf[len - 1 - i] = t;
+    }
+    fwrite(buf, 1, len, stdout);
+    putchar('\n');
+    return 0;
+}
+END_C

@@ -1,0 +1,26 @@
+BEGIN_C
+#include <stdio.h>
+#include <stdlib.h>
+
+static int cmp(const void *a, const void *b)
+{
+    long x = *(const long *)a;
+    long y = *(const long *)b;
+    return (x > y) - (x < y);
+}
+
+int main(void)
+{
+    long v[100];
+    int n = 0;
+    long x;
+    while (n < 100 && scanf("%ld", &x) == 1) {
+        v[n++] = x;
+    }
+    qsort(v, (size_t)n, sizeof v[0], cmp);
+    for (int i = 0; i < n; i++) {
+        printf("%ld\n", v[i]);
+    }
+    return 0;
+}
+END_C

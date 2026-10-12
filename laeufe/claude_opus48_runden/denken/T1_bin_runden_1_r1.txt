@@ -1,0 +1,12 @@
+I'm constructing a minimal ELF64 executable for Linux x86-64 that prints "Hallo Welt" and exits, laying out the ELF header and program header with the code segment loaded at 0x400000.
+
+Writing machine code bytes...
+
+Total code comes to 31 bytes, placing the message string at offset 0x97 (address 0x400097), encoding "Hallo Welt\n" as its raw bytes, bringing the total file size to 162 bytes.
+
+Now I'm laying out the ELF header fields: the e_ident magic bytes and class/endianness/version/OSABI markers, then e_type as ET_EXEC, e_machine as x86-64, e_version, and e_entry pointing to 0x400078.
+
+Writing program header fields...
+
+Writing the syscall code to print "Hello World" via write and exit, and double-checking the offsets line up so the program header and string location are consistent with the entry point at 0x78.
+

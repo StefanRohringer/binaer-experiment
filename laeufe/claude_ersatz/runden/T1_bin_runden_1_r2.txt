@@ -1,0 +1,26 @@
+## Analyse des Fehlers
+
+Der ELF-Header war fehlerhaft: Das Feld `e_flags` war falsch gesetzt (0x400000 statt 0), wodurch `e_phentsize`, `e_phnum` usw. verschoben waren → `Number of program headers: 0` → Exec format error. Außerdem war die Zeichenketten-Adresse und `p_filesz` falsch berechnet.
+
+## Korrektur
+
+- `e_flags = 0`, `e_phentsize = 0x38`, `e_phnum = 1`
+- `p_filesz = p_memsz = 167` (0xa7)
+- String liegt bei 0x40009c (korrekte `movabs`-Adresse)
+
+Layout: 64 (ELF-Header) + 56 (Program-Header) + 36 (Code) + 11 (String) = 167 Bytes.
+
+BEGIN_HEX
+7f 45 4c 46 02 01 01 00 00 00 00 00 00 00 00 00
+02 00 3e 00 01 00 00 00 78 00 40 00 00 00 00 00
+40 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+00 00 00 00 38 00 38 00 01 00 00 00 00 00 00 00
+01 00 00 00 05 00 00 00 00 00 00 00 00 00 00 00
+00 00 40 00 00 00 00 00 00 00 40 00 00 00 00 00
+a7 00 00 00 00 00 00 00 a7 00 00 00 00 00 00 00
+00 00 20 00 00 00 00 00
+bf 01 00 00 00 48 be 9c 00 40 00 00 00 00 00 ba
+0b 00 00 00 b8 01 00 00 00 0f 05 31 ff b8 3c 00
+00 00 0f 05
+48 61 6c 6c 6f 20 57 65 6c 74 0a
+END_HEX

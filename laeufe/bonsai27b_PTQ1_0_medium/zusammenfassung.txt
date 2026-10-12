@@ -1,0 +1,44 @@
+T1_bin_1   FEHL      200 B  Test 1: startet nicht (Exec format error)
+T1_bin_2   FEHL     None B  abgeschnitten: Schleife in der Antwort
+T1_bin_3   FEHL      194 B  Test 1: startet nicht (Exec format error)
+T1_c_1     OK      15960 B  1/1 Tests bestanden
+T1_c_2     OK      15960 B  1/1 Tests bestanden
+T1_c_3     OK      15960 B  1/1 Tests bestanden
+T2_bin_1   FEHL      653 B  Test 1: startet nicht (Exec format error)
+T2_bin_2   FEHL      246 B  Test 1: startet nicht (Exec format error)
+T2_bin_3   FEHL     None B  abgeschnitten: Schleife in der Antwort
+T2_c_1     OK      15968 B  1/1 Tests bestanden
+T2_c_2     OK      15968 B  1/1 Tests bestanden
+T2_c_3     OK      15968 B  1/1 Tests bestanden
+T3_bin_1   FEHL      276 B  Test 1: startet nicht (Exec format error)
+T3_bin_2   FEHL      349 B  Test 1: startet nicht (Exec format error)
+T3_bin_3   FEHL      446 B  Test 1: startet nicht (Exec format error)
+T3_c_1     OK      16008 B  1/1 Tests bestanden
+T3_c_2     OK      16008 B  1/1 Tests bestanden
+T3_c_3     OK      16008 B  1/1 Tests bestanden
+T4_bin_1   FEHL      260 B  Test 1: startet nicht (Exec format error)
+T4_bin_2   FEHL     None B  abgeschnitten: Schleife in der Antwort
+T4_bin_3   FEHL      315 B  Test 1: startet nicht (Exec format error)
+T4_c_1     OK      16136 B  3/3 Tests bestanden
+T4_c_2     OK      16184 B  3/3 Tests bestanden
+T4_c_3     OK      16136 B  3/3 Tests bestanden
+T5_bin_1   FEHL     None B  abgeschnitten: Schleife in der Antwort
+T5_bin_2   FEHL      278 B  Test 1: startet nicht (Exec format error)
+T5_bin_3   FEHL     None B  ungerade Hexlänge
+T5_c_1     FEHL    16280 B  Test 1: falsche Ausgabe b'0\n'
+T5_c_2     OK      16096 B  4/4 Tests bestanden
+T5_c_3     OK      16368 B  4/4 Tests bestanden
+T6_bin_1   FEHL     1023 B  Test 1: startet nicht (Exec format error)
+T6_bin_2   FEHL     None B  abgeschnitten: Schleife in der Antwort
+T6_bin_3   FEHL     None B  keine Abgabe/Markierung
+T6_c_1     OK      16072 B  4/4 Tests bestanden
+T6_c_2     OK      16136 B  4/4 Tests bestanden
+T6_c_3     OK      16136 B  4/4 Tests bestanden
+
+Aufgabe   binär    C
+T1       0/3      3/3
+T2       0/3      3/3
+T3       0/3      3/3
+T4       0/3      3/3
+T5       0/3      2/3
+T6       0/3      3/3

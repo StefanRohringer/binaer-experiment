@@ -1,0 +1,227 @@
+Hier meine Lösung. Ich implementiere einen rekursiven Interpreter mit einem `ev`-Flag, damit bei `?:` nur der gewählte Zweig wirklich ausgewertet wird (keine Division durch 0 / keine Funktionsaufrufe im nicht genommenen Zweig).
+
+BEGIN_C
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+typedef long long ll;
+
+#define MAXV 64
+#define MAXF 32
+
+static char varnames[MAXV][9];
+static ll   varvals[MAXV];
+static int  nvars=0;
+
+static char fnnames[MAXF][9];
+static int  fnpc[MAXF];
+static char fnparams[MAXF][4][9];
+static char *fnbody[MAXF];
+static int  nfns=0;
+
+typedef struct {
+    char names[4][9];
+    ll   vals[4];
+    int  n;
+} Env;
+
+static void skipws(const char **s){ while(**s==' '||**s=='\t') (*s)++; }
+
+static ll parse_ternary(const char **s, Env *env, int ev);
+
+static int findvar(const char*name){
+    for(int i=0;i<nvars;i++) if(!strcmp(varnames[i],name)) return i;
+    return -1;
+}
+static int findfn(const char*name){
+    for(int i=0;i<nfns;i++) if(!strcmp(fnnames[i],name)) return i;
+    return -1;
+}
+
+static ll parse_primary(const char **s, Env *env, int ev){
+    skipws(s);
+    char c=**s;
+    if(c=='('){
+        (*s)++;
+        ll v=parse_ternary(s,env,ev);
+        skipws(s);
+        if(**s==')')(*s)++;
+        return v;
+    }
+    if(c>='0'&&c<='9'){
+        ll v=0;
+        while(**s>='0'&&**s<='9'){ v=v*10+(**s-'0'); (*s)++; }
+        return v;
+    }
+    if(c>='a'&&c<='z'){
+        char name[9]; int n=0;
+        while(**s>='a'&&**s<='z'){ if(n<8)name[n]=**s; n++; (*s)++; }
+        name[n<8?n:8]=0;
+        skipws(s);
+        if(**s=='('){
+            (*s)++;
+            ll args[4]; int na=0;
+            skipws(s);
+            if(**s!=')'){
+                while(1){
+                    ll a=parse_ternary(s,env,ev);
+                    if(na<4)args[na]=a; na++;
+                    skipws(s);
+                    if(**s==','){(*s)++; continue;}
+                    break;
+                }
+            }
+            skipws(s);
+            if(**s==')')(*s)++;
+            if(!ev) return 0;
+            int fi=findfn(name);
+            if(fi<0) return 0;
+            Env ne; ne.n=fnpc[fi];
+            for(int i=0;i<fnpc[fi];i++){
+                strcpy(ne.names[i],fnparams[fi][i]);
+                ne.vals[i]=(i<na?args[i]:0);
+            }
+            const char *bp=fnbody[fi];
+            return parse_ternary(&bp,&ne,1);
+        } else {
+            if(!ev) return 0;
+            if(env){
+                for(int i=0;i<env->n;i++) if(!strcmp(env->names[i],name)) return env->vals[i];
+            }
+            int vi=findvar(name);
+            if(vi>=0) return varvals[vi];
+            return 0;
+        }
+    }
+    return 0;
+}
+
+static ll parse_mul(const char **s, Env *env, int ev){
+    ll v=parse_primary(s,env,ev);
+    while(1){
+        skipws(s);
+        char c=**s;
+        if(c=='*'||c=='/'||c=='%'){
+            (*s)++;
+            ll r=parse_primary(s,env,ev);
+            if(ev){
+                if(c=='*') v=v*r;
+                else if(c=='/') v=v/r;
+                else v=v%r;
+            }
+        } else break;
+    }
+    return v;
+}
+
+static ll parse_add(const char **s, Env *env, int ev){
+    ll v=parse_mul(s,env,ev);
+    while(1){
+        skipws(s);
+        char c=**s;
+        if(c=='+'||c=='-'){
+            (*s)++;
+            ll r=parse_mul(s,env,ev);
+            if(ev){ if(c=='+')v+=r; else v-=r; }
+        } else break;
+    }
+    return v;
+}
+
+static ll parse_cmp(const char **s, Env *env, int ev){
+    ll v=parse_add(s,env,ev);
+    while(1){
+        skipws(s);
+        char c=**s, d=(*s)[1];
+        ll r;
+        if(c=='<'&&d=='='){(*s)+=2; r=parse_add(s,env,ev); if(ev)v=(v<=r);}
+        else if(c=='>'&&d=='='){(*s)+=2; r=parse_add(s,env,ev); if(ev)v=(v>=r);}
+        else if(c=='='&&d=='='){(*s)+=2; r=parse_add(s,env,ev); if(ev)v=(v==r);}
+        else if(c=='!'&&d=='='){(*s)+=2; r=parse_add(s,env,ev); if(ev)v=(v!=r);}
+        else if(c=='<'){(*s)+=1; r=parse_add(s,env,ev); if(ev)v=(v<r);}
+        else if(c=='>'){(*s)+=1; r=parse_add(s,env,ev); if(ev)v=(v>r);}
+        else break;
+    }
+    return v;
+}
+
+static ll parse_ternary(const char **s, Env *env, int ev){
+    ll cond=parse_cmp(s,env,ev);
+    skipws(s);
+    if(**s=='?'){
+        (*s)++;
+        int takeThen = ev && (cond!=0);
+        ll a=parse_ternary(s,env,takeThen);
+        skipws(s);
+        if(**s==':')(*s)++;
+        int takeElse = ev && (cond==0);
+        ll b=parse_ternary(s,env,takeElse);
+        if(!ev) return 0;
+        return cond!=0 ? a : b;
+    }
+    return cond;
+}
+
+int main(void){
+    char line[400];
+    while(fgets(line,sizeof line,stdin)){
+        const char *p=line;
+        skipws(&p);
+        if(*p=='\n'||*p=='\r'||*p==0) continue;
+        char w[16]; int n=0;
+        while(*p>='a'&&*p<='z'){ if(n<15)w[n]=*p; n++; p++; }
+        w[n<15?n:15]=0;
+        if(n==0) continue;
+        if(!strcmp(w,"print")){
+            ll v=parse_ternary(&p,NULL,1);
+            printf("%lld\n",v);
+        } else if(!strcmp(w,"def")){
+            skipws(&p);
+            char fname[9]; int fn=0;
+            while(*p>='a'&&*p<='z'){ if(fn<8)fname[fn]=*p; fn++; p++; }
+            fname[fn<8?fn:8]=0;
+            skipws(&p);
+            if(*p=='(')p++;
+            int idx=nfns++;
+            strcpy(fnnames[idx],fname);
+            int pc=0;
+            skipws(&p);
+            if(*p!=')'){
+                while(1){
+                    skipws(&p);
+                    char pn[9]; int k=0;
+                    while(*p>='a'&&*p<='z'){ if(k<8)pn[k]=*p; k++; p++; }
+                    pn[k<8?k:8]=0;
+                    if(pc<4) strcpy(fnparams[idx][pc],pn);
+                    pc++;
+                    skipws(&p);
+                    if(*p==','){p++;continue;}
+                    break;
+                }
+            }
+            skipws(&p);
+            if(*p==')')p++;
+            skipws(&p);
+            if(*p=='=')p++;
+            skipws(&p);
+            fnpc[idx]=pc;
+            const char *start=p;
+            const char *e=start;
+            while(*e && *e!='\n' && *e!='\r') e++;
+            int len=(int)(e-start);
+            char *b=(char*)malloc(len+1);
+            memcpy(b,start,len); b[len]=0;
+            fnbody[idx]=b;
+        } else {
+            skipws(&p);
+            if(*p=='=')p++;
+            ll v=parse_ternary(&p,NULL,1);
+            int vi=findvar(w);
+            if(vi<0){ vi=nvars++; strcpy(varnames[vi],w); }
+            varvals[vi]=v;
+        }
+    }
+    return 0;
+}
+END_C

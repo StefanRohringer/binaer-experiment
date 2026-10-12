@@ -1,0 +1,39 @@
+Das Programm ist eine minimale statische ELF64-Datei mit 164 Bytes, ohne Sektionen und ohne libc. Es besteht aus einem ELF-Header, einem Program-Header und dem Code mit dem Text.
+
+**Aufbau**
+- **ELF-Header (0x00–0x3F):**
+  - 64 Bit, Little-Endian, Typ `ET_EXEC`, Architektur x86-64.
+  - Einsprungpunkt `0x400078`, ein einziger Program-Header ab Offset `0x40`.
+- **Program-Header (0x40–0x77):**
+  - Ein `PT_LOAD`-Segment, lädt die gesamte Datei ab virtueller Adresse `0x400000`, les-/ausführbar.
+- **Code (ab 0x78, virtuell 0x400078):**
+  ```
+  mov edi, 1            ; fd = stdout
+  lea rsi, [msg]        ; Adresse des Textes (hier mit mov geladen)
+  mov edx, 11           ; Länge "Hallo Welt\n"
+  mov eax, 1            ; sys_write
+  syscall
+  xor edi, edi          ; Exit-Code 0
+  mov eax, 60           ; sys_exit
+  syscall
+  ```
+- **Text (ab 0x?):** `"Hallo Welt\n"` (11 Bytes).
+
+Die Adresse der Zeichenkette wird über ein absolutes `mov rsi, imm64` geladen, die Länge beträgt 11 Bytes (`Hallo Welt` = 10 Zeichen + `\n`).
+
+Hier die fertigen Bytes:
+
+BEGIN_HEX
+7f 45 4c 46 02 01 01 00 00 00 00 00 00 00 00 00
+02 00 3e 00 01 00 00 00 78 00 40 00 00 00 00 00
+40 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+00 00 40 00 38 00 01 00 00 00 00 00 00 00 00 00
+01 00 00 00 05 00 00 00 00 00 00 00 00 00 00 00
+00 00 40 00 00 00 00 00 00 00 40 00 00 00 00 00
+9e 00 00 00 00 00 00 00 9e 00 00 00 00 00 00 00
+00 00 20 00 00 00 00 00
+bf 01 00 00 00 48 be 93 00 40 00 00 00 00 00 ba
+0b 00 00 00 b8 01 00 00 00 0f 05 31 ff b8 3c 00
+00 00 0f 05
+48 61 6c 6c 6f 20 57 65 6c 74 0a
+END_HEX

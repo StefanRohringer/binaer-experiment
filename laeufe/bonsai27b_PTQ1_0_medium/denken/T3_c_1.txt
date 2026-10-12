@@ -1,0 +1,10 @@
+The user wants a complete C program for Linux that implements the FizzBuzz problem for numbers 1 to 30. Let me write this:
+
+- For each number 1 to 30:
+  - If divisible by 15 → print "FizzBuzz\n"
+  - Else if divisible by 3 → print "Fizz\n"
+  - Else if divisible by 5 → print "Buzz\n"
+  - Else → print the number followed by "\n"
+- Exit code 0
+
+Simple and straightforward. Let me write clean C code.

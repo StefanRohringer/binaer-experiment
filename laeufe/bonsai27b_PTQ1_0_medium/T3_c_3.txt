@@ -1,0 +1,49 @@
+Hier ist das vollständige C-Programm:
+
+```c
+#include <stdio.h>
+
+int main(void) {
+    for (int i = 1; i <= 30; i++) {
+        if (i % 15 == 0) {
+            printf("FizzBuzz\n");
+        } else if (i % 3 == 0) {
+            printf("Fizz\n");
+        } else if (i % 5 == 0) {
+            printf("Buzz\n");
+        } else {
+            printf("%d\n", i);
+        }
+    }
+    return 0;
+}
+```
+
+BEGIN_C
+#include <stdio.h>
+
+int main(void) {
+    for (int i = 1; i <= 30; i++) {
+        if (i % 15 == 0) {
+            printf("FizzBuzz\n");
+        } else if (i % 3 == 0) {
+            printf("Fizz\n");
+        } else if (i % 5 == 0) {
+            printf("Buzz\n");
+        } else {
+            printf("%d\n", i);
+        }
+    }
+    return 0;
+}
+END_C
+
+**Kurz zur Erklärung:**
+
+- Der `for`-Loop iteriert von 1 bis 30 (inklusive).
+- Die Prüfung auf `% 15` kommt zuerst, da 15 das LFG von 3 und 5 ist – so werden z. B. 15, 30 als "FizzBuzz" ausgewertet, statt als "Fizz" oder "Buzz".
+- Danach folgen die einzelnen Tests für 3 und 5 in der geforderten Priorität.
+- `return 0;` stellt sicher, dass der Exit-Code 0 ist.
+- Jeder `printf`-Aufruf endet mit `\n`, sodass jede Ausgabezeile korrekt terminiert ist.
+
+Kompilierung: `gcc -O2 fizzbuzz.c -o fizzbuzz`

@@ -1,0 +1,50 @@
+I'm planning out a C interpreter structure: a tokenizer, recursive descent expression parser, global variable storage by name, and functions stored with their body text evaluated against a parameter environment when called.
+
+Defining the data structures for variables and functions...
+
+I'm working through the evaluation logic: when looking up a name, check parameters first, then fall back to globals, and building a recursive descent parser with a pointer-based cursor to handle ternary expressions with proper short-circuit evaluation of only the chosen branch.
+
+Switching strategy to a cleaner separation: parse each expression into an AST once, then evaluate it separately, rather than mixing parsing and evaluation together.
+
+Defining AST node types...
+
+Working out the recursive-descent grammar, with ternary handled as condition-then-branch-else-branch using right-associative parsing for the else clause.
+
+For comparisons, I decide a single non-chained level suffices since the problem guarantees expressions aren't chained, though allowing a loop is harmless either way.
+
+Writing parseAdd/parseMul grammar... I note there's no unary minus since numbers are non-negative, so parseUnary just falls through to parsePrimary, which handles parentheses, numbers, and identifiers (distinguishing variables from function calls). Now I need to carefully handle multi-character operators like `<=` versus `<` during tokenizing.
+
+I'm assigning integer codes for each operator type, then planning the line-level parser: split input into lines, skip blank ones, and detect whether a line starts with "def", "print", or is a plain assignment.
+
+For distinguishing these, I read the first identifier on the line—"def" triggers function parsing (name, params, body expression), "print" triggers print parsing, otherwise it's treated as a variable name followed by a single `=` and an expression.
+
+Now I'm sketching the evaluator that walks the AST: numbers return directly, variables look up in local params or globals, binary nodes compute arithmetic or comparisons (yielding 0/1), and ternary nodes branch based on the condition.
+
+For function calls, I look up the function by name, evaluate arguments in the caller's environment, then build a fresh environment binding params to those values before evaluating the body—keeping function names and variable names in separate namespaces. Division and modulo can just use C's native operators since truncation toward zero matches what's needed. I'm planning storage as flat arrays for globals and functions, with a node pool sized to handle recursion up to 200 deep and potentially thousands of lines of input.
+
+I'll just malloc AST nodes without freeing, since the total allocation is bounded and freeing isn't worth the complexity. For parsing, I'll read the entire input into a buffer, then process it line by line—copying each line into a local buffer, null-terminating it, and pointing a global parse cursor at it, with a helper to skip spaces and tabs.
+
+Defining the node struct...
+
+Writing the parser functions...
+
+Adding multiplication/division/modulo and addition/subtraction parsing...
+
+Writing expression parser logic...
+
+I'm also adding a top-level parseExpr function that handles ternary conditionals, recursively parsing the condition and both branches. I'm now double-checking whether using parseExpr for the ternary's middle branch correctly stops at the colon rather than greedily consuming it as another ternary.
+
+Starting on the evaluator next...
+
+I'm handling variable lookup by checking local environment then globals, ternary evaluation by conditionally evaluating branches, and function calls by locating the function definition and binding parameters into a new environment for the call.
+
+Still writing binary operator cases...
+
+Now I'm structuring the main loop: reading stdin into a buffer, splitting into lines, and processing each one. For each line I skip whitespace, handle empty lines, then peek at an identifier to decide whether it's a keyword or a variable reference before committing to parse it that way.
+
+For "def" I parse a function name, then parentheses, then comma-separated parameter names until hitting the closing paren. For "print" I parse an expression and evaluate it in an empty environment, printing the result. Otherwise I treat the identifier as a variable assignment -- expecting an '=' sign, parsing the right-hand expression, evaluating it, then either updating an existing variable slot or creating a new one.
+
+I also handle empty or whitespace-only lines by skipping them after trimming, and make sure variable names can't collide with keywords like "print". For reading input, I'm considering reading line by line, possibly up to 200 bytes per line using a simple character-by-character approach instead of relying on getline.
+
+Settling on fgets with a 256-byte buffer, reading each line and stripping the newline before processing. I initialize an empty environment struct for the main loop, verify that evaluating a variable node checks parameters and locals correctly while function calls look up the separate function table, and confirm parameters properly shadow globals since the environment lookup happens first. With nodes allocated via calloc, I think the implementation is complete.
+

@@ -1,0 +1,42 @@
+[
+ {
+  "aufgabe": "T8",
+  "modus": "bin_runden",
+  "lauf": 1,
+  "ok": true,
+  "info": "10/10 Tests bestanden",
+  "groesse_byte": 727,
+  "antwort_zeichen": 2886,
+  "runden": 2
+ },
+ {
+  "aufgabe": "T8",
+  "modus": "bin_runden",
+  "lauf": 2,
+  "ok": true,
+  "info": "10/10 Tests bestanden",
+  "groesse_byte": 860,
+  "antwort_zeichen": 3500,
+  "runden": 1
+ },
+ {
+  "aufgabe": "T8",
+  "modus": "c_runden",
+  "lauf": 1,
+  "ok": true,
+  "info": "10/10 Tests bestanden",
+  "groesse_byte": 16544,
+  "antwort_zeichen": 3154,
+  "runden": 1
+ },
+ {
+  "aufgabe": "T8",
+  "modus": "c_runden",
+  "lauf": 2,
+  "ok": true,
+  "info": "10/10 Tests bestanden",
+  "groesse_byte": 16552,
+  "antwort_zeichen": 3249,
+  "runden": 1
+ }
+]

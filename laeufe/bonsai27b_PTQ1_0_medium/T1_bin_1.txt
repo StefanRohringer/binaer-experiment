@@ -1,0 +1,26 @@
+BEGIN_HEX
+7f 45 4c 46 00 00 00 00 02 00 00 00 3e 00 00 00 01 00 00 00 78 00 40 00 00 00 00 00 40 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 40 00 00 00 38 00 00 00 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 01 00 00 00 05 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 40 00 00 00 00 00 00 00 00 00 40 00 00 00 00 00 00 00 af 00 00 00 00 00 00 00 af 00 00 00 00 00 00 00 00 10 00 00 00 00 00 00 00 48 c7 c0 01 00 00 00 48 c7 c7 01 00 00 00 48 c7 c6 a4 00 40 00 00 00 00 00 48 c7 c2 0b 00 00 00 0f 05 48 c7 c0 3c 00 00 00 31 ff 0f 05 48 61 6c 6c 6f 20 57 65 6c 74 0a
+END_HEX
+
+**Erläuterung der Struktur (175 = 0xAF Bytes):**
+
+| Abschnitt | Offset | Größe | Inhalt |
+|---|---|---|---|
+| ELF-Header | 0x00–0x3F | 64 B | ET_EXEC, EM_X86_64, entry=0x400078 |
+| Phdr (PT_LOAD) | 0x40–0x77 | 56 B | filesz=memsz=0xAF, vaddr=0x400000, align=0x1000 |
+| Code | 0x78–0xA3 | 44 B | `sys_write(1, "…", 11)` → `sys_exit(0)` |
+| String | 0xA4–0xAE | 11 B | `Hallo Welt\n` |
+
+**Code (ab vaddr 0x400078):**
+```
+48 C7 C0 01 00 00 00    mov rax, 1            ; sys_write
+48 C7 C7 01 00 00 00    mov rdi, 1            ; stdout
+48 C7 C6 A4 00 40 00 00 00 00 00    mov rsi, 0x4000A4  ; ptr → String
+48 C7 C2 0B 00 00 00    mov rdx, 11         ; len("Hallo Welt\n")
+0F 05                   syscall
+48 C7 C0 3C 00 00 00    mov rax, 60         ; sys_exit
+31 FF                   xor rdi, rdi        ; code 0
+0F 05                   syscall
+```
+
+Um es auszuführen: `printf`/`echo` die Bytes in eine Datei, `chmod +x`, dann ausführen.

@@ -1,0 +1,4 @@
+I'm laying out a minimal ELF64 executable by hand, placing the header and program header before the code, then writing the syscall instructions to set up a write call with the message pointer.
+
+Writing ELF binary bytes...
+

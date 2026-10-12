@@ -1,0 +1,83 @@
+Hier ist meine Lösung mit einem rekursiven Abstiegsparser.
+
+BEGIN_C
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <stdint.h>
+
+static const char *p;
+
+static int64_t parse_expr(void);
+
+static void skip_ws(void) {
+    while (*p == ' ' || *p == '\t') p++;
+}
+
+static int64_t parse_factor(void) {
+    skip_ws();
+    if (*p == '+') { p++; return parse_factor(); }
+    if (*p == '-') { p++; return -parse_factor(); }
+    if (*p == '(') {
+        p++;
+        int64_t v = parse_expr();
+        skip_ws();
+        if (*p == ')') p++;
+        return v;
+    }
+    int64_t v = 0;
+    while (*p >= '0' && *p <= '9') {
+        v = v * 10 + (*p - '0');
+        p++;
+    }
+    return v;
+}
+
+static int64_t parse_term(void) {
+    int64_t v = parse_factor();
+    for (;;) {
+        skip_ws();
+        if (*p == '*') {
+            p++;
+            v = v * parse_factor();
+        } else if (*p == '/') {
+            p++;
+            int64_t d = parse_factor();
+            v = v / d; /* C truncates toward zero */
+        } else {
+            break;
+        }
+    }
+    return v;
+}
+
+static int64_t parse_expr(void) {
+    int64_t v = parse_term();
+    for (;;) {
+        skip_ws();
+        if (*p == '+') {
+            p++;
+            v = v + parse_term();
+        } else if (*p == '-') {
+            p++;
+            v = v - parse_term();
+        } else {
+            break;
+        }
+    }
+    return v;
+}
+
+int main(void) {
+    char buf[256];
+    if (!fgets(buf, sizeof(buf), stdin)) {
+        return 0;
+    }
+    size_t len = strlen(buf);
+    if (len > 0 && buf[len-1] == '\n') buf[len-1] = '\0';
+    p = buf;
+    int64_t result = parse_expr();
+    printf("%lld\n", (long long)result);
+    return 0;
+}
+END_C

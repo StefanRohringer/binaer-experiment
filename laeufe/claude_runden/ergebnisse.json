@@ -1,0 +1,122 @@
+[
+ {
+  "aufgabe": "T1",
+  "modus": "bin_runden",
+  "lauf": 1,
+  "ok": false,
+  "info": "Ablehnung durch Sicherheitsfilter",
+  "groesse_byte": null,
+  "antwort_zeichen": 0,
+  "runden": 1
+ },
+ {
+  "aufgabe": "T1",
+  "modus": "bin_runden",
+  "lauf": 2,
+  "ok": false,
+  "info": "Ablehnung durch Sicherheitsfilter",
+  "groesse_byte": null,
+  "antwort_zeichen": 235,
+  "runden": 1
+ },
+ {
+  "aufgabe": "T1",
+  "modus": "c_runden",
+  "lauf": 1,
+  "ok": true,
+  "info": "1/1 Tests bestanden",
+  "groesse_byte": 15968,
+  "antwort_zeichen": 206,
+  "runden": 1
+ },
+ {
+  "aufgabe": "T1",
+  "modus": "c_runden",
+  "lauf": 2,
+  "ok": true,
+  "info": "1/1 Tests bestanden",
+  "groesse_byte": 15968,
+  "antwort_zeichen": 189,
+  "runden": 1
+ },
+ {
+  "aufgabe": "T4",
+  "modus": "bin_runden",
+  "lauf": 1,
+  "ok": false,
+  "info": "Ablehnung durch Sicherheitsfilter",
+  "groesse_byte": null,
+  "antwort_zeichen": 0,
+  "runden": 1
+ },
+ {
+  "aufgabe": "T4",
+  "modus": "bin_runden",
+  "lauf": 2,
+  "ok": false,
+  "info": "Ablehnung durch Sicherheitsfilter",
+  "groesse_byte": null,
+  "antwort_zeichen": 0,
+  "runden": 1
+ },
+ {
+  "aufgabe": "T4",
+  "modus": "c_runden",
+  "lauf": 1,
+  "ok": false,
+  "info": "Ablehnung durch Sicherheitsfilter",
+  "groesse_byte": null,
+  "antwort_zeichen": 0,
+  "runden": 1
+ },
+ {
+  "aufgabe": "T4",
+  "modus": "c_runden",
+  "lauf": 2,
+  "ok": false,
+  "info": "Ablehnung durch Sicherheitsfilter",
+  "groesse_byte": null,
+  "antwort_zeichen": 0,
+  "runden": 1
+ },
+ {
+  "aufgabe": "T7",
+  "modus": "bin_runden",
+  "lauf": 1,
+  "ok": false,
+  "info": "Ablehnung durch Sicherheitsfilter",
+  "groesse_byte": null,
+  "antwort_zeichen": 0,
+  "runden": 1
+ },
+ {
+  "aufgabe": "T7",
+  "modus": "bin_runden",
+  "lauf": 2,
+  "ok": false,
+  "info": "Ablehnung durch Sicherheitsfilter",
+  "groesse_byte": null,
+  "antwort_zeichen": 0,
+  "runden": 1
+ },
+ {
+  "aufgabe": "T7",
+  "modus": "c_runden",
+  "lauf": 1,
+  "ok": true,
+  "info": "10/10 Tests bestanden",
+  "groesse_byte": 16208,
+  "antwort_zeichen": 2565,
+  "runden": 1
+ },
+ {
+  "aufgabe": "T7",
+  "modus": "c_runden",
+  "lauf": 2,
+  "ok": true,
+  "info": "10/10 Tests bestanden",
+  "groesse_byte": 16264,
+  "antwort_zeichen": 2622,
+  "runden": 1
+ }
+]

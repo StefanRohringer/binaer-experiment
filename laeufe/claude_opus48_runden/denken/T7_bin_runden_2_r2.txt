@@ -1,0 +1,138 @@
+I'm tracing the crash by examining the stack usage, checking whether the push/pop pairs around the call to skipWhite stay balanced within each function.
+
+Mapping out the parser structure now: parsePrimary handles parentheses and digits, parseTerm handles multiplication/division, and parseExpr handles addition/subtraction, each calling into the next and skipping whitespace in between. I'm checking the entry point's call into parseExpr to see where the segfault might actually originate, likely in how input is read.
+
+I trace the read syscall into the buffer at 0x402000, confirming it fits within the loaded memory segment. The number-to-string conversion writes backward from 0x402220, so I'm checking whether the read buffer and output buffer could overlap given their respective sizes and directions.
+
+Since the segment is page-aligned up to 0x403000 and marked RWE, the write boundaries all seem valid, so the segfault must come from something else—possibly related to recursion and stack behavior.
+
+I'm tracing through "1+2\n": parsePrimary reads '1', returns to parseTerm which checks for '*'/'/' and finds '+' instead, popping and returning to parseExpr, which then increments r15 past the '+' to point at '2' and recurses to parse the next term.
+
+Following that call, parsePrimary reads '2', parseTerm again finds no '*'/'/' and returns 2, then parseExpr adds 1+2=3 and loops back to check for more operators — hitting '\n' this time, so it pops and returns 3 as the final result, which should get converted and printed back at the entry point.
+
+But since the program segfaults with no output at all, I'm now tracing the push/pop balance across the whole parseExpr loop more carefully to find where the stack goes wrong, since the arithmetic itself looks correct.
+
+Actually, the read syscall setup looks right, and r15 is being set to the buffer address correctly as well. Now I'm checking parsePrimary's number parsing path, following the skipwhite call and the character check for '('.
+
+The real issue dawns on me though — the segment loaded from the file only covers up to file offset 0x1bd, but memory at 0x402000 corresponds to file offset 0x2000, way past the file's actual size, so that region is uninitialized BSS space, not something guaranteed to be mapped as writable by the loader.
+
+I double-check the entry point calculation against the header sizes and confirm it lands correctly after the ELF and program headers at 0x78, so that's not the bug. The call targets also match what objdump resolved, so the logic there checks out — now I'm wondering if the segfault is actually caused by unbounded recursion blowing the stack.
+
+Tracing through skipWhite confirms it correctly handles spaces and terminates on the newline since it's not a space, digit, operator, or paren. The initial stack setup at _start also looks fine since rsp points to valid memory containing argc. I'm now retracing the actual call instruction to pin down where things go wrong.
+
+Checking the division logic with cqto and idiv again, that also appears correct. Looking at the number-to-string conversion for output, the backward-write logic with rsi and rdx computing the byte count also checks out. Everything in the logic seems sound, so I'm stuck on why it would segfault.
+
+Wait — maybe the issue is with how p_memsz exceeds p_filesz, meaning the BSS region gets zero-filled by the kernel across the mapped pages, and I need to verify the buffer actually lands within the mapped memory range rather than spilling past it.
+
+Maybe the entry point itself is miscalculated, or the stack pointer from the kernel points somewhere unexpected—though the stack should be writable either way. I'm now tracing through parseTerm's disassembly step by step, checking the call to parsePrimary, the push of its result, and the subsequent comparisons against '*' and '/' to see if there's a stack imbalance causing a bad return address.
+
+Continuing the trace, I see the division branch handling and the loop structure that pushes and multiplies results, which looks balanced. Now I'm moving into parseExpr's disassembly, tracing its call to parseTerm, the push of the result, and the comparisons against '+' to check for the same kind of stack imbalance.
+
+Everything looks balanced, so I'm stuck on why "1+2" would segfault here. The read syscall into the buffer seems fine, so I'm starting to wonder if the crash is actually about memory mapping—maybe the BSS at 0x402000 isn't properly mapped due to how the program header's offset and memsz/filesz interact.
+
+Checking the header values: file size is 445 bytes, the segment maps that into memory, and the rest gets zero-filled as BSS, which should correctly cover the buffer address. That all checks out as standard ELF loading behavior, so maybe the actual bug is elsewhere—perhaps in the number-printing logic once the result is computed.
+
+Tracing through the division loop for a result of 3: it divides by 10, gets remainder 3, converts to the character '3', writes it to the buffer, and since the quotient is now 0 the loop correctly terminates.
+
+That logic checks out and should print "3\n" as expected, so the segfault must come from somewhere else. I'm going back to examine the raw ELF header and program header bytes themselves to see if something there is misconfigured—checking fields like e_type, e_machine, e_entry, and e_phoff for correctness.
+
+The filesz, memsz, and align values all look correct, and the alignment math checks out with vaddr matching offset modulo 0x1000. Everything in the header seems valid, so I'm puzzled why it's segfaulting -- maybe I need to double-check the actual entry point address once more.
+
+I verify e_entry resolves to 0x400078, pointing to the first instruction byte, which matches. I'm stumped on the crash cause, so I start reconsidering other possibilities: whether the syscall clobbers something unexpected, whether the register setup before the division instruction is correct, and whether stack alignment at entry could matter even without SSE usage -- none of these seem to explain it either.
+
+Since my trace suggests the program should print "3\n", I suspect either my trace has an error or the actual built binary differs from what I designed. I double check the file size matches the expected filesz, and that the objdump output matches my intended bytes, confirming the binary is correct. Then I turn to checking whether the buffer address used for the read syscall actually falls within the mapped and writable memory region given the segment's memsz.
+
+I confirm the buffer address does fall within the mapped page range since the kernel maps full pages covering the BSS extension, so that shouldn't be the issue. To eliminate any subtlety around how the loader handles the gap between filesz and memsz, I decide to try restructuring things so filesz equals memsz entirely, avoiding BSS and placing the buffer directly within the file's data region instead.
+
+The read syscall itself wouldn't segfault even if the buffer were unmapped - it'd just return -EFAULT. And the stack pointer at entry is set up by the kernel, so push instructions should work fine there too. Maybe I should verify the actual call target bytes in the disassembly to make sure the jump offset is computing correctly.
+
+Still within mapped memory, so that's fine too. I keep failing to find a logic error here—maybe the BSS zero-fill assumption needs rechecking, since the kernel's load_elf_binary should handle padzero and set_brk correctly for standard executables with a single PT_LOAD segment, but I should double check this holds in this specific case.
+
+Let me verify syscall numbers instead: read is 0, write is 1, exit is 0x3c—those all check out, so the issue must be elsewhere, perhaps in how the stack or return address is being handled around the push/pop/ret sequence.
+
+Tracing the call chain for parsing "1+2" through parseExpr, parseTerm, parsePrimary, and skipWhite all looks structurally correct. Since the kernel would simply refuse to exec a malformed ELF rather than let it run and crash with SIGSEGV, I need to look elsewhere for what's actually triggering signal 11.
+
+I'm re-checking the stack usage during recursion, the division instruction in the number-printing routine for a bad divisor, and now stepping through the raw instruction bytes around 0x9e-0xd4 again to see if the disassembly matches what I expect, particularly the test/jump/mov sequence around 0xc9-0xd4.
+
+Tracing input "3" through this path, parseExpr returns 3 which gets moved into rcx and r8, so it should print 3 without crashing — meaning the crash must happen earlier, during parsing, not here. I'm now stepping through skipWhite and parsePrimary byte by byte: skipWhite reads the first character and correctly detects it's not whitespace, then parsePrimary checks for an opening paren and skips if absent.
+
+Continuing the trace, I follow the digit-parsing loop: '1' is converted to its numeric value, the pointer advances past it until hitting '+' (which fails the digit check, correctly ending the number), then returns 1 up through parseTerm, where skipWhite and operator checks for '*' and '/' also correctly return without consuming the '+'. Back in parseExpr, the same checks happen for the '+' operator, confirming the addition path is reached as expected.
+
+No '-' either, so it pops 3 and returns to entry with rax=3 — logically everything checks out for outputting 3, yet the program crashes. That points to something outside my trace: maybe the binary's memory mapping or the read into 0x402000 is faulting silently, leaving r15 pointing at a zeroed or unmapped page rather than the actual input.
+
+If that page is mapped but zero, parsePrimary would just read 0, parse nothing, and print "0" instead of crashing. So the real crash must mean 0x402000 isn't mapped at all — which brings me to how the ELF loader handles the last PT_LOAD segment when memsz exceeds filesz, extending brk via vm_brk rather than guaranteeing that address is backed.
+
+Continuing the computation, end = page-aligned elf_brk = 0x403000, so vm_brk_flags maps anonymous pages from 0x401000 to 0x403000, meaning 0x402000 ends up mapped after all, and padzero handles zeroing the tail of the first file page. That suggests the address should actually be accessible, so I need to check the initial segment mmap more carefully to see what range it actually covers.
+
+So the full memory layout spans 0x400000–0x403000 with BSS included, which contradicts the crash I observed — something else must be wrong. I should recheck the relative call offsets carefully, since a miscalculated displacement could send control flow somewhere invalid and cause the crash instead. Let me trace through the entry call and the parsePrimary call target to verify they land where expected.
+
+Continuing through the rest of the call offsets, they all check out correctly against the disassembly. So the logic, binary, and address mapping all seem fine, yet the segfault persists—I need to reconsider what's actually going wrong.
+
+Maybe it's not the stack growing too deep, since only a few call levels are involved. I'm starting to suspect the output buffer write near 0x402220 might be the actual culprit, where the computed destination address could be overlapping something it shouldn't.
+
+Stepping back from guessing at mapping details, I should reconsider whether the kernel actually mapped 0x402000 at all given the single combined text/bss segment layout, and whether the read buffer at 0x402000 falls within a properly mapped page based on how load_elf_binary computes the brk range.
+
+Rather than chasing this, a cleaner fix is to avoid relying on BSS mapping entirely — either by padding the file so filesz equals memsz (covering the buffer within file-backed data), or by placing the buffer somewhere already guaranteed to be mapped, like the stack, instead of beyond the code segment.
+
+I should double-check my actual assumption: maybe the fault isn't about BSS mapping timing at all, but a more basic issue with the read buffer address not being mapped as expected, causing the crash during parsing right after.
+
+Checking the math: memsz 0x2220 comfortably covers BSS starting at 0x402000, so the mapping itself still looks sound. The crash must be elsewhere, so I'm tracing through the read and print routines step by step, byte by byte, to see if something fails even before "3" gets output.
+
+Tracing through the digit-extraction routine...
+
+So this computes the write length as 2 bytes (the digit plus newline), then issues a syscall to write "3\n" to stdout. I confirm 0x40221e falls within the mapped BSS region since the ELF page-aligned brk extends to 0x403000, so the memory access itself should be valid. Everything checks out logically, which means I must be wrong about something else entirely — perhaps the BSS isn't actually being mapped the way I assumed.
+
+A read syscall with an unmapped buffer returns EFAULT rather than raising SIGSEGV, so that's not where the crash happens. The real first access to BSS memory from code would be a byte load at 0x402000 inside skipWhite or parsePrimary, and if that page isn't mapped, this is exactly where the SIGSEGV with no output would occur — matching what I'm observing. So I need to figure out why the BSS page at 0x402000 wouldn't be mapped, which means reconsidering how set_brk actually behaves when p_memsz extends past the file-backed mapping.
+
+Working through the page alignment: elf_bss at 0x4001bd rounds up to 0x401000, and elf_brk at 0x402220 rounds up to 0x403000, so vm_brk_flags maps the 0x401000-0x403000 range anonymously, with padzero clearing the tail of the file-backed page first. That confirms 0x402000 falls within this anonymous mapping.
+
+So if that's mapped, the crash shouldn't happen — I'm going in circles trying to figure out why. Maybe I should sidestep the issue entirely by using the stack for buffers instead of BSS, setting memsz=filesz to avoid any BSS ambiguity, though that means rewriting address computations to be stack-relative which is more error-prone. Or maybe the real problem is that the kernel maps the segment without write permission.
+
+I'm tracing through the read syscall setup and register assignments to see if there's actually a simpler bug hiding there — checking the read length, the syscall number zeroing, and the r15 register being loaded with the buffer address.
+
+Then I reconsider trying a more defensive fix: instead of chasing the original bug, just relocate the data buffers into the first memory page, which is guaranteed to be file-backed and writable, since that avoids the whole RWE segment question entirely.
+
+That leaves about 0xE43 bytes free between 0x4001bd and 0x401000, plenty for a 200-byte input buffer and output storage. I'll place the read buffer around 0x400a00 and an output buffer around 0x400f00, both within that writable zeroed region of the first mapped page.
+
+Confirming the region is safe: the file-backed mmap rounds up to a full page, and the kernel zero-fills bytes beyond filesz within that last page via padzero, so 0x400800-0x400f00 stays within the writable mapped page without needing extra BSS.
+
+Actually, since empirically the BSS approach crashed, I should trust that and just move my buffers into the first mapped page instead of relying on BSS being mapped. I'll keep memsz at 0x3000 for safety but place the read buffer at an address like 0x400400, right after the code region.
+
+Figuring out the code's actual size, entry and print logic run from 0x78 to 0xf4, then parsing functions extend to 0x1bd, so I need my buffer addresses safely past that, within the first page before 0x401000. I'll put the read buffer around 0x400600 and have the output buffer grow downward from 0x400f00, keeping them well separated. Updating immediate values...
+
+Finishing edx's patch to point at the new address, then deciding on memsz — I'll set it to 0x1000 to safely cover the BSS region within the first mapped page.
+
+Setting p_align to match at 0x1000 too. Checking for overlap between the read buffer and output buffer regions confirms they're well separated with no conflict. Still, I'm second-guessing whether the BSS mapping assumption actually holds given the crash, so I want to reconsider whether there's a separate bug I'm missing.
+
+Given everything traces correctly except the BSS buffer, moving that buffer to the first page looks like the right fix. I'm now reconsidering the LOAD segment's RWE permissions and whether filesz/memsz mismatch could cause an issue with how certain kernels handle the mapping.
+
+I'm tracing through how the kernel sets up the program break and anonymous BSS mapping for a static binary, checking whether elf_map's handling of total segment size across all PT_LOADs could be where things go wrong.
+
+With only one segment and a mmap length far larger than the actual file size, accessing pages past EOF should trigger SIGBUS rather than the SIGSEGV we're actually seeing, so that theory doesn't quite fit—I need to reconsider what's really causing the fault.
+
+With one segment, total_size computes to 0x3000, and elf_map then maps that whole region in one call, mmap'ing the file-backed portion before handling the remaining bss via separate zeroing/mapping logic.
+
+So after elf_map loads just the first page as file-backed, set_brk then adds anonymous BSS pages covering the rest, meaning 0x401000-0x403000 ends up anonymous while only 0x400000-0x401000 stays file-backed — mapping 0x3000 bytes from a tiny 0x1bd file beyond its actual size.
+
+Wait, do_munmap actually requires start to be page aligned and would return EINVAL for a non-aligned address like 0x4001bd, so that munmap call would fail outright. I'm now reconsidering whether the kernel actually page-aligns the offset before computing size, since ELF_PAGEOFFSET might force alignment differently than I assumed.
+
+I'm working through the math: with size rounded up to 0x1000, the mapping ends up page-aligned at 0x401000, so munmapping the remainder (0x2000 bytes) cleanly unmaps 0x401000-0x403000, leaving the file-backed region correctly aligned.
+
+Tracing further, set_brk then maps anonymous memory from 0x401000-0x403000 and zeroes the partial page at elf_bss, so the final layout has 0x400000-0x401000 as file-backed (zero past 0x1bd) and 0x401000-0x403000 as anonymous — meaning 0x402000 should indeed end up mapped.
+
+So the BSS isn't the issue; the crash must come from elsewhere. I'm going back to scrutinize the print routine's loop termination logic, checking the division and register-move instructions around the digit-printing loop for a mismatch between what's intended and what's actually encoded.
+
+Wait, this looks suspicious: after storing the digit and decrementing the pointer, it sets rax back to rcx but never updates rcx with the quotient from the division. That means rcx never actually shrinks, so the loop would seemingly never terminate based on this reading — I must be misreading the register usage here, since rcx should be getting the updated quotient each iteration for the loop to work correctly.
+
+At offset 0xc1, the instruction moves rcx into rax instead of rax into rcx — the encoding has the ModRM byte backwards (c8 instead of c1), so the quotient is never written back to rcx, confirming that single-byte swap as the actual bug.
+
+Mapping out the byte offsets...
+
+Still tracing register moves...
+
+Continuing through the division and character conversion steps, I spot the actual bug: the instruction at 0xc1 is `48 89 C8` (mov rax,rcx) but it should be `48 89 C1` (mov rcx,rax) to correctly update the register before the test/jump — the third byte C8 needs to be C1.
+
+This also explains the crash: the infinite loop decrements rdi through all the mapped pages down to 0x400000, then hits unmapped memory below it and segfaults before any write ever happens, matching the observed behavior of no output. So this single-byte fix should resolve everything.
+
+Still writing hex bytes...
+

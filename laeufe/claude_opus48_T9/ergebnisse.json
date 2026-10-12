@@ -1,0 +1,22 @@
+[
+ {
+  "aufgabe": "T9",
+  "modus": "c_runden",
+  "lauf": 1,
+  "ok": true,
+  "info": "10/10 Tests bestanden",
+  "groesse_byte": 20768,
+  "antwort_zeichen": 6449,
+  "runden": 1
+ },
+ {
+  "aufgabe": "T9",
+  "modus": "c_runden",
+  "lauf": 2,
+  "ok": true,
+  "info": "10/10 Tests bestanden",
+  "groesse_byte": 20760,
+  "antwort_zeichen": 5514,
+  "runden": 1
+ }
+]

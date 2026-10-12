@@ -1,0 +1,8 @@
+# Vom Modell erzeugte und gebaute Programme (werden von pruefen.py jederzeit neu gebaut)
+laeufe/*/bau/
+# Sperrdatei eines laufenden Durchgangs
+laeufe/*/lauf.pid
+# Altes Archiv, Inhalt steckt im Repository selbst
+binaer_experiment_v2/*.tar.gz
+__pycache__/
+*.pyc

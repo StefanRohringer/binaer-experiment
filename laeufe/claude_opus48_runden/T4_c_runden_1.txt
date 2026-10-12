@@ -1,0 +1,19 @@
+BEGIN_C
+#include <stdio.h>
+#include <string.h>
+
+int main(void) {
+    char buf[202];
+    if (fgets(buf, sizeof(buf), stdin) != NULL) {
+        size_t len = strlen(buf);
+        if (len > 0 && buf[len - 1] == '\n') {
+            len--;
+        }
+        for (size_t i = len; i > 0; i--) {
+            putchar(buf[i - 1]);
+        }
+    }
+    putchar('\n');
+    return 0;
+}
+END_C

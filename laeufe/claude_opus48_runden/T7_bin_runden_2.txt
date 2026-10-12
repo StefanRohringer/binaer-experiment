@@ -1,0 +1,40 @@
+## Analyse
+
+Der Absturz lag an der Dezimalausgabe-Schleife. Bei Offset `0xc1` steht `48 89 C8` (`mov %rcx,%rax`, also `rax = rcx`). Dort sollte aber der **Quotient zurück nach rcx** geschrieben werden: `mov %rax,%rcx` = `48 89 C1`.
+
+Durch den Fehler wurde `rcx` nie aktualisiert → Endlosschleife, die immer dasselbe Zeichen schreibt und `rdi` immer weiter dekrementiert, bis sie unter `0x400000` aus dem gemappten Speicher läuft → SIGSEGV (und keinerlei Ausgabe, da das `write` nie erreicht wurde).
+
+Korrektur: ein Byte `C8` → `C1` an Offset `0xc1+2`.
+
+BEGIN_HEX
+7F 45 4C 46 02 01 01 00 00 00 00 00 00 00 00 00
+02 00 3E 00 01 00 00 00 78 00 40 00 00 00 00 00
+40 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+00 00 00 00 40 00 38 00 01 00 00 00 00 00 00 00
+01 00 00 00 07 00 00 00 00 00 00 00 00 00 00 00
+00 00 40 00 00 00 00 00 00 00 40 00 00 00 00 00
+BD 01 00 00 00 00 00 00 20 22 00 00 00 00 00 00
+00 10 00 00 00 00 00 00
+31 FF BE 00 20 40 00 BA 00 01 00 00 31 C0 0F 05
+41 BF 00 20 40 00 E8 EF 00 00 00 BF 20 22 40 00
+48 FF CF C6 07 0A 48 89 C1 49 89 C0 48 85 C0 79
+03 48 F7 D9 48 89 C8 31 D2 BB 0A 00 00 00 48 F7
+F3 80 C2 30 48 FF CF 88 17 48 89 C1 48 85 C9 75
+E3 4D 85 C0 79 06 48 FF CF C6 07 2D 48 89 FE BA
+20 22 40 00 48 29 FA BF 01 00 00 00 B8 01 00 00
+00 0F 05 31 FF B8 3C 00 00 00 0F 05
+41 0F B6 07 3C 20 75 05 49 FF C7 EB F3 C3
+E8 ED FF FF FF 41 0F B6 07 3C 28 74 22 48 31 C9
+41 0F B6 17 80 EA 30 80 FA 09 77 0F 48 6B C9 0A
+0F B6 D2 48 01 D1 49 FF C7 EB E5 48 89 C8 C3 49
+FF C7 E8 49 00 00 00 50 E8 B5 FF FF FF 49 FF C7
+58 C3
+E8 B9 FF FF FF 50 E8 A5 FF FF FF 41 0F B6 07 3C
+2A 74 06 3C 2F 74 14 58 C3 49 FF C7 E8 9D FF FF
+FF 48 89 C1 58 48 0F AF C1 EB DA 49 FF C7 E8 8B
+FF FF FF 48 89 C1 58 48 99 48 F7 F9 EB C7
+E8 BD FF FF FF 50 E8 67 FF FF FF 41 0F B6 07 3C
+2B 74 06 3C 2D 74 13 58 C3 49 FF C7 E8 A1 FF FF
+FF 48 89 C1 58 48 01 C8 EB DB 49 FF C7 E8 90 FF
+FF FF 48 89 C1 58 48 29 C8 EB CA
+END_HEX

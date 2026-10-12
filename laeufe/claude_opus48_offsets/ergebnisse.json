@@ -1,0 +1,42 @@
+[
+ {
+  "aufgabe": "T7",
+  "modus": "bin_offsets_runden",
+  "lauf": 1,
+  "ok": true,
+  "info": "10/10 Tests bestanden",
+  "groesse_byte": 477,
+  "antwort_zeichen": 4898,
+  "runden": 3
+ },
+ {
+  "aufgabe": "T7",
+  "modus": "bin_offsets_runden",
+  "lauf": 2,
+  "ok": true,
+  "info": "10/10 Tests bestanden",
+  "groesse_byte": 497,
+  "antwort_zeichen": 4838,
+  "runden": 1
+ },
+ {
+  "aufgabe": "T8",
+  "modus": "bin_offsets_runden",
+  "lauf": 1,
+  "ok": true,
+  "info": "10/10 Tests bestanden",
+  "groesse_byte": 838,
+  "antwort_zeichen": 8374,
+  "runden": 1
+ },
+ {
+  "aufgabe": "T8",
+  "modus": "bin_offsets_runden",
+  "lauf": 2,
+  "ok": true,
+  "info": "10/10 Tests bestanden",
+  "groesse_byte": 906,
+  "antwort_zeichen": 8177,
+  "runden": 2
+ }
+]

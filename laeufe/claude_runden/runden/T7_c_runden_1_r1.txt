@@ -1,0 +1,96 @@
+Das Programm wertet den Ausdruck mit einem rekursiven Abstiegsparser aus.
+
+- **Rangfolge:** Es gibt eine Ebene pro Rangstufe: `expr` für + und -, `term` für * und /, `factor` für Zahlen und Klammern. Dadurch gilt Punkt vor Strich, und Klammern werden zuerst ausgewertet.
+- **Auswertungsrichtung:** Gleichrangige Operatoren werden in einer Schleife von links nach rechts verarbeitet.
+- **Division:** Die Division mit `/` auf `long long` schneidet in C (seit C99) Richtung null ab. Damit ergibt -7/2 wie verlangt -3.
+- **Leerzeichen:** Leerzeichen, Tabs und Zeilenumbrüche werden vor jedem Element übersprungen.
+- **Vorzeichen:** Ein Vorzeichen vor einer Zahl oder Klammer (`-` oder `+`) wird zusätzlich akzeptiert. Laut Aufgabe ist das nicht nötig.
+- **Ganzzahlüberlauf:** Zahlen werden vorzeichenlos aufgebaut. Damit entsteht beim Einlesen kein undefiniertes Verhalten durch Überlauf.
+
+BEGIN_C
+#include <stdio.h>
+#include <stdlib.h>
+
+static const char *p;
+
+static void skip(void) {
+    while (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n') p++;
+}
+
+static long long expr(void);
+
+static long long factor(void) {
+    skip();
+    if (*p == '(') {
+        p++;
+        long long v = expr();
+        skip();
+        if (*p == ')') p++;
+        return v;
+    }
+    if (*p == '-') {
+        p++;
+        long long v = factor();
+        return (long long)(0ULL - (unsigned long long)v);
+    }
+    if (*p == '+') {
+        p++;
+        return factor();
+    }
+    unsigned long long v = 0;
+    while (*p >= '0' && *p <= '9') {
+        v = v * 10ULL + (unsigned long long)(*p - '0');
+        p++;
+    }
+    return (long long)v;
+}
+
+static long long term(void) {
+    long long v = factor();
+    for (;;) {
+        skip();
+        if (*p == '*') {
+            p++;
+            long long r = factor();
+            v = v * r;
+        } else if (*p == '/') {
+            p++;
+            long long r = factor();
+            if (r != 0) v = v / r;
+        } else {
+            break;
+        }
+    }
+    return v;
+}
+
+static long long expr(void) {
+    long long v = term();
+    for (;;) {
+        skip();
+        if (*p == '+') {
+            p++;
+            long long r = term();
+            v = v + r;
+        } else if (*p == '-') {
+            p++;
+            long long r = term();
+            v = v - r;
+        } else {
+            break;
+        }
+    }
+    return v;
+}
+
+int main(void) {
+    static char buf[4096];
+    if (!fgets(buf, sizeof buf, stdin)) {
+        buf[0] = '\0';
+    }
+    p = buf;
+    long long v = expr();
+    printf("%lld\n", v);
+    return 0;
+}
+END_C

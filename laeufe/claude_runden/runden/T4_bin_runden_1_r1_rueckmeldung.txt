@@ -1,0 +1,3 @@
+Ergebnis deiner Abgabe: keine Abgabe/Markierung
+
+Korrigiere das Programm und gib die vollständige neue Fassung wieder zwischen BEGIN_HEX und END_HEX aus.

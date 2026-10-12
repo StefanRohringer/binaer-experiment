@@ -1,0 +1,101 @@
+The user wants a complete C program for Linux that:
+1. Reads up to 100 non-negative integers from stdin, one per line, each less than 1000000
+2. Each line ends with a newline
+3. Outputs them sorted in ascending order, one per line with newline
+4. Exit code 0
+5. Compiles with "gcc -O2"
+6. Uses normal C standard library
+
+Let me write a simple C program:
+
+```c
+#include <stdio.h>
+
+int main(void) {
+    int nums[100];
+    int count = 0;
+    int x;
+
+    while (count < 100 && scanf("%d\n", &x) == 1) {
+        nums[count++] = x;
+    }
+
+    // Simple bubble sort
+    for (int i = 0; i < count - 1; i++) {
+        for (int j = 0; j < count - 1 - i; j++) {
+            if (nums[j] > nums[j + 1]) {
+                int tmp = nums[j];
+                nums[j] = nums[j + 1];
+                nums[j + 1] = tmp;
+            }
+        }
+    }
+
+    for (int i = 0; i < count; i++) {
+        printf("%d\n", nums[i]);
+    }
+
+    return 0;
+}
+```
+
+Wait, let me think about `scanf("%d\n", &x)`. The `\n` in the format string means "skip any whitespace including newlines". This should work fine - it reads an integer and then skips the trailing newline. Actually, I could just use `scanf("%d", &x)` and it would work the same way since it skips whitespace before the number.
+
+Actually, let me reconsider. With `scanf("%d", &x)`, it skips leading whitespace (including newlines) and reads the integer. The next call would skip the newline after the integer. This works perfectly.
+
+Using `scanf("%d\n", &x)` - the `\n` after `%d` tells scanf to skip whitespace (including the newline) after reading the integer. This is also fine.
+
+Either way works. Let me keep it simple with just `"%d"`.
+
+Let me also consider: what if there's a trailing newline at EOF? `scanf("%d", &x)` will fail if there's no more integer to read, which is what we want.
+
+What about the "each line ends with a newline" part? This just means the input format is well-formed - each number is on its own line followed by `\n`. My scanf approach handles this correctly.
+
+Let me also consider edge cases:
+- No input (count = 0): the loops just don't execute, we print nothing, return 0. Fine.
+- Exactly 100 numbers: the while condition stops at 100. Fine.
+- Fewer than 100 numbers: reads until EOF. Fine.
+
+The sort is O(n²) with n ≤ 100, so at most 10,000 comparisons. Totally fine.
+
+I could also use qsort from stdlib.h, but a simple bubble sort is perfectly fine for n ≤ 100.
+
+Let me finalize my solution. I'll use qsort actually since it's cleaner and the user said standard library is fine.
+
+Actually, let me just keep it simple with bubble sort - it's clear and correct for n ≤ 100.
+
+Let me write the final version:
+
+```c
+#include <stdio.h>
+
+int main(void) {
+    int nums[100];
+    int count = 0;
+    int x;
+
+    while (count < 100 && scanf("%d", &x) == 1) {
+        nums[count++] = x;
+    }
+
+    for (int i = 0; i < count - 1; i++) {
+        for (int j = 0; j < count - 1 - i; j++) {
+            if (nums[j] > nums[j + 1]) {
+                int tmp = nums[j];
+                nums[j] = nums[j + 1];
+                nums[j + 1] = tmp;
+            }
+        }
+    }
+
+    for (int i = 0; i < count; i++) {
+        printf("%d\n", nums[i]);
+    }
+
+    return 0;
+}
+```
+
+This is complete, correct, and compiles with gcc -O2. Exit code 0 is guaranteed by `return 0`.
+
+The format `BEGIN_C` then code then `END_C` is what's requested.

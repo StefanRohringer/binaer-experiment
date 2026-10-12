@@ -1,0 +1,18 @@
+I'm noticing the ELF header fields look misplaced, so I'm double-checking the ELF64 header layout to verify the correct byte offsets for each field.
+
+Going through my actual bytes, e_flags shows 0x400000 when it should be 0, and e_phentsize shows 1 when it should be 56 (0x38) -- these values are shifted, suggesting an alignment error somewhere in how I laid out the header bytes.
+
+So I'm correcting row4 (offsets 48-63) to: flags=0, ehsize=56, phentsize=56, phnum=1, shentsize=0, shnum=0, shstrndx=0. Now moving on to parse the program header starting at offset 64.
+
+For the program header: p_type=PT_LOAD, p_flags=R+X, p_offset=0, p_vaddr/p_paddr=0x400000, filesz/memsz=total file size, align=0x200000. Row5 (64-79) checks out correctly, but row6 (80-95) still needs working out for vaddr and paddr fields.
+
+I'm verifying the remaining program header bytes: p_vaddr and p_paddr both equal 0x400000 as expected, p_filesz and p_memsz both equal 0x9e (158 bytes), and p_align is 0x200000, all correct. The file totals 120 bytes (64 for the ELF header plus 56 for the program header), so the code section starts at offset 0x78. I'm now tallying the length of the assembly instructions in sequence—write syscall setup, movabs for the string address, length and fd arguments, the syscall itself, then zeroing a register and calling exit—to confirm the total byte count matches 0x9e.
+
+I calculate the code occupies 36 bytes, ending at offset 0x9c (vaddr 0x40009c), which means the string "Hallo Welt\n" actually starts there rather than at the 0x400093 address I initially used in the movabs instruction, so I need to correct that.
+
+Working through the total file size: 120 bytes of header plus 36 bytes of code plus 11 bytes of string equals 167 bytes (0xa7), which matches what's being reported, so p_filesz needs to be 0xa7 rather than my earlier value. I should rebuild the whole layout from scratch to avoid compounding errors.
+
+Writing the ELF header bytes...
+
+Finishing the syscall sequence to write the string and exit cleanly, then embedding the "Hello Welt\n" bytes. Checking the math: header plus program header plus code plus string totals 167 bytes, which matches.
+

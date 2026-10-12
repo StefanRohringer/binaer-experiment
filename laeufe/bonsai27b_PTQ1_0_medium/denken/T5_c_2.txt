@@ -1,0 +1,50 @@
+The user wants a complete C program for Linux that:
+1. Takes a file path as the first command-line argument
+2. Opens the file (max 1 MB)
+3. Counts newline characters ('\n') in it
+4. Prints the count as a decimal number followed by a newline to stdout
+5. Exit code 0
+6. Compiled with "gcc -O2"
+7. Only normal C standard library can be used
+8. At the end: BEGIN_C, source code, END_C
+
+Let me write a straightforward C program:
+
+- Check argc >= 2
+- Open the file with fopen
+- Read bytes and count '\n'
+- Handle the 1 MB limit (if file is larger than 1 MB, what to do? The task says "höchstens 1 MB" which means "at most 1 MB" - I think this means the file will be at most 1 MB, so we just need to handle it. But to be safe, I could check file size. Actually, re-reading: "Öffne die Datei (höchstens 1 MB)" - I think this is just specifying the constraint on input size, not something we need to enforce. Let me just read the whole file.
+- Print the count
+- Return 0
+
+Let me write a simple and efficient program:
+
+```c
+#include <stdio.h>
+
+int main(int argc, char *argv[]) {
+    if (argc < 2) return 0;
+    
+    FILE *f = fopen(argv[1], "rb");
+    if (!f) return 0;
+    
+    long count = 0;
+    int c;
+    while ((c = fgetc(f)) != EOF) {
+        if (c == '\n') count++;
+    }
+    fclose(f);
+    
+    printf("%ld\n", count);
+    
+    return 0;
+}
+```
+
+This is clean and correct. Since the file is at most 1 MB, fgetc will be fine (with -O2, it'll be optimized to fread internally). Let me make sure it's correct.
+
+Actually, let me use fread with a buffer for better performance, though with -O2 fgetc should be optimized anyway. Let me keep it simple with fgetc since the file is at most 1 MB.
+
+The exit code should be 0. If the file can't be opened, the problem doesn't specify what to do, but I'll just return 0 as well (or handle it gracefully). The task says "Exit-Code 0" as the expected result.
+
+Let me finalize the program.

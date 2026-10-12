@@ -1,0 +1,8 @@
+I'm planning the ELF64 binary layout by hand: a 64-byte ELF header plus a 56-byte program header, with code starting at offset 0x78, loaded at vaddr 0x400000 with RWX permissions, and reserving extra memsz beyond filesz for a bss buffer around 0x401000.
+
+For the actual logic, I'm designing a recursive-descent expression parser directly in machine code, using rsi to walk the input buffer through expr/term/factor routines that handle +/-, */, parentheses, and plain non-negative integers (no unary minus needed). For input, I'm leaning toward a single read of up to a couple hundred bytes since pipe writes are typically atomic, relying on the zeroed bss and parser stopping at unrecognized characters to handle the end of input gracefully.
+
+Writing raw assembly/machine code...
+
+Writing parser and expression evaluator logic...
+

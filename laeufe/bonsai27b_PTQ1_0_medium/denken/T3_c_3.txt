@@ -1,0 +1,37 @@
+The user wants a complete C program for Linux that implements the FizzBuzz problem for numbers 1 to 30. It should be compiled with "gcc -O2" and uses the standard C library.
+
+Requirements:
+- For each number 1 to 30, print a line:
+  - "FizzBuzz" if divisible by 15
+  - "Fizz" if divisible by 3
+  - "Buzz" if divisible by 5
+  - Otherwise, the number itself
+- Each line ends with a newline
+- Exit code 0
+- Must be a complete C program
+- At the end of my answer: BEGIN_C line, C source code, END_C line
+
+Let me write a simple C program:
+
+```c
+#include <stdio.h>
+
+int main(void) {
+    for (int i = 1; i <= 30; i++) {
+        if (i % 15 == 0) {
+            printf("FizzBuzz\n");
+        } else if (i % 3 == 0) {
+            printf("Fizz\n");
+        } else if (i % 5 == 0) {
+            printf("Buzz\n");
+        } else {
+            printf("%d\n", i);
+        }
+    }
+    return 0;
+}
+```
+
+This is straightforward and complete. The exit code will be 0 (return 0 from main). Each line ends with \n. The standard library (stdio.h) is used. It will compile fine with gcc -O2.
+
+Let me format the response with the BEGIN_C and END_C markers.

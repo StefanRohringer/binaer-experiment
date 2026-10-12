@@ -1,0 +1,138 @@
+I'm considering how to hand-assemble a raw ELF64 executable implementing a recursive descent expression evaluator with arithmetic operators and parentheses, weighing whether to mentally write assembly and encode it byte-by-byte versus some other approach to generating the machine code directly.
+
+I'm sketching the grammar for the parser (expr, term, factor levels with proper operator precedence) and planning the memory layout, deciding to read stdin into a buffer, track a position pointer, and use a fixed load address with BSS storage for the static no-PIE binary.
+
+Planning memory layout...
+
+Still writing syscall logic...
+
+Actually, I'm realizing tracking the buffer position across recursive calls is tricky with memory addressing, so I'm leaning toward keeping the position pointer in a dedicated register like r15 instead to avoid memory-store complications.
+
+Writing the parser functions...
+
+Handling the parenthesized case now: skip the opening paren, recursively parse the inner expression, then skip whitespace and consume the closing paren, making sure to preserve the result in rax by stashing it on the stack before calling skip since that clobbers rax.
+
+Then I move on to parse_term, which first parses a factor and loops: at each step it checks for '*' or '/', and if found consumes the operator, parses the next factor, and multiplies or divides into the running result, otherwise restores the saved value and returns.
+
+Similarly parse_expr starts with parse_term and loops checking for '+' or '-', consuming the operator and combining via add or subtract, finally setting up the main routine to begin reading input into r15.
+
+Now I'm writing the print routine to convert the result into a decimal string, handling sign and building digits backward into a buffer before appending a newline.
+
+Still writing conversion logic...
+
+Double-checking the division approach: rdx:rax split by 10 gives quotient and remainder correctly, with rcx tracking the running absolute value through the loop until zero. I should also consider the edge case of INT64_MIN since negating it overflows.
+
+Now I'm shifting to the hardest part — laying out the ELF binary byte by byte, computing the ELF header and program header sizes, fixing the code's virtual address, and then figuring out where to place the buffer and output regions in memory.
+
+Confirming the kernel zero-fills memory beyond filesz, I settle on buffer at 0x402000 and outbuf at 0x402200 with a defined end address. Now I'm planning out the instruction order starting at 0x400078, beginning with _start and working through the functions so I can compute relative offsets correctly.
+
+Writing syscall and setup bytes...
+
+Writing the integer-to-string conversion logic...
+
+Still writing syscall exit code... Now I'm moving on to writing the skip function, starting with loading a byte from the pointer in r15 and verifying the instruction encoding.
+
+Working out the encoding: [r15] resolves to 41 0F B6 07 for the movzx, then comparing against space with 3C 20, a conditional jump if not equal, and incrementing r15 with 49 FF C7.
+
+Now I need to compute all the byte offsets carefully so the jne and jmp relative targets land correctly. I'll start assigning addresses linearly from the code start and track the running byte count to resolve each branch.
+
+Writing integer-to-string conversion logic...
+
+Continuing the assembly, I write the syscall to output the string via write(1, buf, len) by computing the length as the difference between the buffer end address and rdi, then exit cleanly with exit(0). Now I'm tracing through instruction addresses step by step starting from 0x400078, tracking each instruction's size to build the offset table.
+
+Still computing offsets...
+
+With the _start/print block finished at 0xF4, I'm now laying out the function definitions, starting with a skip-whitespace routine that scans forward over space characters using movzx, cmp, and a loop-back jump.
+
+After computing the ret address and loop offsets, skip spans 0xF4 to 0x102. Now I'm starting parse_factor right after it, calling skip, loading a byte, and checking whether it's an open paren to branch into paren-handling logic.
+
+Writing digit loop code...
+
+Still encoding bytecode...
+
+Encoding more opcodes...
+
+Still encoding multiply/divide branches...
+
+Now I'm computing the jump offset for the je .mul branch, resolving it to a forward displacement of 6 bytes.
+
+With parse_term fully mapped from 0x144 to 0x182, I'm moving on to parse_expr starting at 0x182, calculating the call offset back to parse_term and beginning to lay out its loop structure with push and skip calls.
+
+Now I'm encoding the character comparisons for '+' and '-' with their jump targets to .add and .sub, followed by the fallback pop/ret path, then starting the .add branch by incrementing r15.
+
+Continuing the subtraction branch: incrementing the pointer, calling parse_term again, then subtracting the result from the running total before jumping back to the loop start.
+
+Resolving the remaining relative offsets for je .add and je .sub branches, then marking parse_expr's address range so I can patch the outstanding call-site displacements for parse_expr at offsets 0x8E and beyond.
+
+With all jumps and calls resolved, the code section runs from file offset 0x78 to 0x1BD, giving a total file size of 445 bytes. I still need memsz to cover both the buffer and outbuf regions beyond the file-backed code, computing memsz as 0x2220 while filesz stays at 0x1BD.
+
+This is a single PT_LOAD segment with RWX permissions, so the kernel should zero-fill the gap between filesz and memsz automatically, which handles the bss-like buffer region correctly. The ELF and program headers share the same mapped page as the code, and entry point should land right after the headers.
+
+Now I'm verifying offset/vaddr alignment is consistent mod 0x1000, then building the ELF header bytes field by field -- magic number, class, endianness, version, and padding.
+
+Filling in the rest of the ELF header: entry point at 0x400078, program header offset at 64, one program header entry of size 56, and zeroed section header fields since there are none.
+
+Then I'm laying out the single PT_LOAD program header—flags set to RWX, load address 0x400000, matching file and memory sizes, and 0x1000 alignment—confirming the total headers add up to exactly 120 bytes (0x78), which lines up with where the code segment begins.
+
+Writing machine code bytes...
+
+Now I'm mapping out the skip-whitespace routine, which loops advancing a pointer past space characters until a non-space byte is found, then returns. After that comes parse_factor, which calls into another parser, checks if the result starts with '(' for a parenthesized expression, and otherwise accumulates a numeric value by reading digit characters, subtracting '0', multiplying the running total by 10, and adding each digit until a non-digit is hit, then returns the parsed number in the accumulator.
+
+Continuing into parse_term, the code recursively calls parse_factor, then checks the next character for '*' or '/' operators, advancing the pointer and recursively parsing another factor to multiply or divide the accumulated value, using a sign-extending division instruction for the division case, looping back to handle chained operators.
+
+Finishing the last few bytes of that branch, then I'm verifying the relative offset calculations for several call instructions against their byte encodings, confirming each matches the target address correctly.
+
+Still computing relative offsets...
+
+Still verifying jump offsets...
+
+Verifying the remaining jump offsets all check out correctly, so the full offset table looks solid. Now I'm moving to double-check individual instruction encodings, starting with the REX prefix and opcode calculation needed for moving an immediate value into register r15d.
+
+Still encoding instructions...
+
+Verifying more encodings... mov rax,rcx, and the test instruction variants for rax, rcx, and r8 against each other, checking REX prefixes and ModRM bytes match expectations.
+
+Continuing to verify instruction encodings for mov, sub, dec, and inc operations, confirming REX prefixes and ModRM bytes against each expected opcode pattern.
+
+Verifying more encodings... and the xor instructions for zeroing registers, plus setting up the immediate load for a memory address into esi.
+
+One thing I should check: newline handling during parsing. Since skip only handles spaces, not newlines, and parsing naturally stops at non-digit/non-operator characters, the trailing newline won't interfere with the parser terminating correctly.
+
+I also confirm idiv truncates toward zero as expected, and the digit-detection comparison correctly handles out-of-range characters by relying on unsigned wraparound. Leading spaces before the expression are handled fine since parse_factor always skips whitespace first.
+
+Checking the stack usage, the kernel-provided rsp is used directly without extra alignment since there's no libc dependency, and push/pop/call/ret stay balanced throughout. For the zero-result edge case, the conversion loop correctly outputs "0" by dividing zero and writing the single digit before the loop terminates.
+
+Now I'm verifying that negating the result for negative numbers to get the absolute value works fine for normal ranges, and confirming the entry point 0x400078 matches the 120-byte ELF+program headers exactly. I'm now assembling the full binary, writing out the ELF header bytes field by field.
+
+Still verifying ELF header fields and moving into the program header, confirming type, flags, and offset values byte by byte.
+
+Now I'm assembling the actual _start code: zeroing registers, setting up a syscall to write a newline and convert a number to decimal digits via division by 10, handling the sign for negative values, and building the output buffer byte by byte.
+
+I'm also writing the parse_factor function for a recursive descent parser, handling digit parsing and nested parenthesized expressions by accumulating digit values and multiplying by 10, plus a skip function to bypass whitespace characters.
+
+Now I'm building parse_term, which handles multiplication, division, and modulo by calling parse_factor and checking operator characters, then parse_expr for addition and subtraction at the top level of expression parsing.
+
+Now I'm verifying the total assembled code length by summing up each block's size to confirm it matches the expected 325-byte span from 0x78 to 0x1BD.
+
+The total file size works out to 445 bytes (0x1BD), matching the filesz field. I'm now going through the _start block instruction by instruction to tally up byte counts and confirm the offsets line up correctly.
+
+Tallying up the skip_count and parse_factor instruction costs confirms the running total of 124, then I'm working through the parse_term byte counts to add to the sum.
+
+Everything checks out consistently across expr, term, and factor counts. I'm now double-checking the paren-handling branch in parse_factor to make sure the number parsing logic after it is correct.
+
+Division truncates toward zero as expected, and left-to-right evaluation in the term loop is handled properly. I'm verifying the stack usage around the paren case, making sure saved registers survive the skip call without clobbering issues.
+
+Tracing through parse_term's loop logic now, checking that the pushed left operand gets correctly popped in both the operator and non-operator branches before the comparisons against multiplication and other operator characters.
+
+So the push/pop pairs balance out across parse_term, parse_expr, and the paren handling in parse_factor -- each push matches exactly one pop. Since _start never returns and exits via syscall directly, the initial stack setup with argc doesn't need to stay balanced the same way, since call/ret pairs for parse_expr are self-contained.
+
+Now I'm double-checking the memory layout: the buffer, outbuf, and their end addresses, and whether the zeroed gap between filesz and the bss region is handled correctly.
+
+The kernel zero-fills anonymous pages for the segment automatically, and the stack is provided by the kernel so no explicit mapping is needed. Confirming the read syscall destination falls within the writable PT_LOAD segment, I move to writing out the final ELF header and code as hex bytes.
+
+Writing hex dump...
+
+Writing exit syscall logic...
+
+Still writing parser...
+

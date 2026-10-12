@@ -1,0 +1,27 @@
+Ergebnis deiner Abgabe: Compilerfehler: programm.c:2:1: error: stray ‘`’ in program
+
+Compilermeldungen:
+programm.c:2:1: error: stray ‘`’ in program
+    2 | ```c
+      | ^
+programm.c:2:2: error: stray ‘`’ in program
+    2 | ```c
+      |  ^
+programm.c:2:3: error: stray ‘`’ in program
+    2 | ```c
+      |   ^
+programm.c:2:5: error: expected ‘;’ before ‘typedef’
+    2 | ```c
+      |     ^
+      |     ;
+programm.c:20:1: error: stray ‘`’ in program
+   20 | ```
+      | ^
+programm.c:20:2: error: stray ‘`’ in program
+   20 | ```
+      |  ^
+programm.c:20:3: error: stray ‘`’ in program
+   20 | ```
+      |   ^
+
+Korrigiere das Programm und gib die vollständige neue Fassung wieder zwischen BEGIN_C und END_C aus.

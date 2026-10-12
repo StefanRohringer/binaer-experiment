@@ -1,0 +1,4 @@
+Writing ELF header bytes...
+
+Adding the message bytes brings the total file size to 162 bytes (0xA2), which I'll encode as the filesz/memsz field in the header.
+

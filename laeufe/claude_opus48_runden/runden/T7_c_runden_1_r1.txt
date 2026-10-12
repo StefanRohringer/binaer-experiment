@@ -1,0 +1,56 @@
+BEGIN_C
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+static const char *p;
+
+static long long parseExpr(void);
+
+static void skip(void){ while(*p==' '||*p=='\t') p++; }
+
+static long long parseFactor(void){
+    skip();
+    if(*p=='('){
+        p++;
+        long long v=parseExpr();
+        skip();
+        if(*p==')') p++;
+        return v;
+    }
+    long long v=0;
+    while(*p>='0'&&*p<='9'){ v=v*10+(*p-'0'); p++; }
+    return v;
+}
+
+static long long parseTerm(void){
+    long long v=parseFactor();
+    for(;;){
+        skip();
+        if(*p=='*'){ p++; v=v*parseFactor(); }
+        else if(*p=='/'){ p++; long long d=parseFactor(); v=v/d; }
+        else break;
+    }
+    return v;
+}
+
+static long long parseExpr(void){
+    long long v=parseTerm();
+    for(;;){
+        skip();
+        if(*p=='+'){ p++; v=v+parseTerm(); }
+        else if(*p=='-'){ p++; v=v-parseTerm(); }
+        else break;
+    }
+    return v;
+}
+
+int main(void){
+    static char buf[256];
+    if(!fgets(buf,sizeof(buf),stdin)) return 0;
+    p=buf;
+    long long r=parseExpr();
+    printf("%lld\n", r);
+    return 0;
+}
+END_C

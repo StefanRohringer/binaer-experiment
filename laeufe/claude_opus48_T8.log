@@ -1,0 +1,7 @@
+nohup: Eingabe wird ignoriert
+4 Anfragen, 4 gleichzeitig
+T8_c_runden_1 Runde 1: OK  14.5 s, 1419 Tokens
+T8_c_runden_2 Runde 1: OK  14.6 s, 1404 Tokens
+T8_bin_runden_1 Runde 1: Test 5: falsche Ausgabe b'-3\n-1\n2\n20\n'  597.4 s, 54834 Tokens
+T8_bin_runden_2 Runde 1: OK  619.2 s, 57499 Tokens
+T8_bin_runden_1 Runde 2: OK  103.8 s, 8844 Tokens

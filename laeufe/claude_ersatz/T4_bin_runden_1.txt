@@ -1,0 +1,63 @@
+## Analyse
+
+Ich baue die ELF64-Datei von Hand:
+
+- **Ein LOAD-Segment** (RWX), gemappt bei `0x400000`, `filesz=215`, `memsz=0x2000`. Der Bereich jenseits von `filesz` ist Null-gefüllt und beschreibbar → ich nutze `0x401000` als Eingabepuffer und `0x401100` als Ausgabepuffer.
+- **Entry** bei `0x400078` (direkt nach ELF-Header 64 + Programm-Header 56 = 120 Bytes).
+
+**Programmlogik (Maschinencode):**
+1. `read(0, 0x401000, 200)` → `rax` = Anzahl Bytes.
+2. Wenn letztes Byte `'\n'` → Länge dekrementieren.
+3. Bytes rückwärts nach `0x401100` kopieren, `'\n'` anhängen.
+4. `write(1, 0x401100, len+1)`.
+5. `exit(0)`.
+
+Randfälle: Leere Eingabe (n=0) → es wird nur `'\n'` ausgegeben; Eingabe ohne abschließendes `'\n'` → gesamte Zeile umgekehrt + `'\n'`.
+
+Der Lesezugriff bei `rax=0` auf `0x400fff` liegt im Null-Bereich → harmlos.
+
+## Prüfung der Sprungweiten
+- `jne +3` überspringt `dec rax` (3 Bytes) ✓
+- Loop: `jz +0x0F` zur Nachbehandlung, `jmp -0x14` zum Schleifenanfang ✓
+
+Code-Länge = 95 Bytes, Gesamtdatei = 215 Bytes (0xD7).
+
+BEGIN_HEX
+7F 45 4C 46 02 01 01 00 00 00 00 00 00 00 00 00
+02 00 3E 00 01 00 00 00 78 00 40 00 00 00 00 00
+40 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+00 00 00 00 40 00 38 00 01 00 00 00 00 00 00 00
+01 00 00 00 07 00 00 00 00 00 00 00 00 00 00 00
+00 00 40 00 00 00 00 00 00 00 40 00 00 00 00 00
+D7 00 00 00 00 00 00 00 00 20 00 00 00 00 00 00
+00 10 00 00 00 00 00 00
+31 C0
+31 FF
+BE 00 10 40 00
+BA C8 00 00 00
+0F 05
+80 7C 06 FF 0A
+75 03
+48 FF C8
+49 89 C0
+48 8D 74 06 FF
+BF 00 11 40 00
+4C 89 C1
+48 85 C9
+74 0F
+8A 06
+88 07
+48 FF CE
+48 FF C7
+48 FF C9
+EB EC
+C6 07 0A
+B8 01 00 00 00
+BF 01 00 00 00
+BE 00 11 40 00
+49 8D 50 01
+0F 05
+B8 3C 00 00 00
+31 FF
+0F 05
+END_HEX

@@ -1,0 +1,2 @@
+I'm planning a C program with a recursive descent parser for this language, storing variable names (up to 30, each 1-8 lowercase letters) in a lookup table before implementing it.
+

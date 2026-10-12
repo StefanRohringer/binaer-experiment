@@ -1,0 +1,17 @@
+nohup: Eingabe wird ignoriert
+12 Anfragen, 4 gleichzeitig
+T1_c_runden_2 Runde 1: OK  1.9 s, 53 Tokens
+T1_c_runden_1 Runde 1: OK  1.9 s, 54 Tokens
+T1_bin_runden_2 Runde 1: OK  29.8 s, 2881 Tokens
+T1_bin_runden_1 Runde 1: OK  33.6 s, 3064 Tokens
+T4_c_runden_1 Runde 1: Compilerfehler: programm.c:2:1: error: stray ‘`’ in program  6.1 s, 542 Tokens
+T4_c_runden_2 Runde 1: OK  4.5 s, 352 Tokens
+T4_c_runden_1 Runde 2: OK  2.6 s, 179 Tokens
+T4_bin_runden_2 Runde 1: OK  114.9 s, 10317 Tokens
+T7_c_runden_1 Runde 1: OK  7.3 s, 592 Tokens
+T4_bin_runden_1 Runde 1: OK  128.0 s, 12047 Tokens
+T7_c_runden_2 Runde 1: OK  9.3 s, 897 Tokens
+T7_bin_runden_2 Runde 1: Test 1: Absturz (Signal 11)  291.6 s, 26025 Tokens
+T7_bin_runden_1 Runde 1: Test 2: falsche Ausgabe b'77\n'  296.2 s, 26805 Tokens
+T7_bin_runden_1 Runde 2: OK  75.9 s, 6384 Tokens
+T7_bin_runden_2 Runde 2: OK  329.7 s, 25205 Tokens

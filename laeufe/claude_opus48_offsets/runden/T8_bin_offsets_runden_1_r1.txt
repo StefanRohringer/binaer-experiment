@@ -1,0 +1,252 @@
+## Analyse
+
+Ich habe einen vollständigen Interpreter als handkodierte x86-64-Maschinensprache erstellt:
+
+- **Einlesen**: Alles von stdin in einen BSS-Puffer (`read`-Syscalls bis EOF).
+- **Zeilenverarbeitung**: Pro Zeile wird der erste Bezeichner gelesen. Folgt `=`, ist es eine Zuweisung, sonst ein `print`.
+- **Parser**: Rekursiver Abstieg mit `parse_expr` (`+ -`), `parse_term` (`* / %`), `parse_factor` (Zahl, Name, Klammern). Der Cursor liegt in `r15`, das Ende in `r14`.
+- **Arithmetik**: `idiv`/`cqo` liefern C-Semantik (Abschneiden Richtung null, Rest mit Dividenden-Vorzeichen).
+- **Variablen**: Lineare Tabelle (Name als 64-Bit-Key aus bis zu 8 Buchstaben), Wert daneben.
+- **Ausgabe**: Dezimalkonvertierung mit Vorzeichen, `write`-Syscall. Exit 0.
+
+BSS liegt bei 0x600000 (Eingabe), 0x602000 (Namen), 0x602100 (Werte), 0x602200 (Anzahl), 0x602208 (Zahlpuffer).
+
+Alle Sprungziele und Offsets wurden einzeln verifiziert.
+
+BEGIN_HEX
+0000: 7F 45 4C 46 02 01 01 00 00 00 00 00 00 00 00 00 ; e_ident
+0010: 02 00 3E 00 01 00 00 00 78 00 40 00 00 00 00 00 ; type,machine,ver,entry
+0020: 40 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 ; phoff,shoff
+0030: 00 00 00 00 40 00 38 00 01 00 00 00 00 00 00 00 ; flags,ehsize,phentsize,phnum
+0040: 01 00 00 00 07 00 00 00 00 00 00 00 00 00 00 00 ; p_type,p_flags,p_offset
+0050: 00 00 40 00 00 00 00 00 00 00 40 00 00 00 00 00 ; p_vaddr,p_paddr
+0060: 46 03 00 00 00 00 00 00 00 00 30 00 00 00 00 00 ; p_filesz,p_memsz
+0070: 00 10 00 00 00 00 00 00 ; p_align
+0078: 49 BC 00 00 60 00 00 00 00 00 ; mov r12,0x600000
+0082: 31 C0 ; xor eax,eax
+0084: 31 FF ; xor edi,edi
+0086: 4C 89 E6 ; mov rsi,r12
+0089: BA 00 20 00 00 ; mov edx,8192
+008E: 0F 05 ; syscall
+0090: 48 85 C0 ; test rax,rax
+0093: 7E 05 ; jle read_done
+0095: 49 01 C4 ; add r12,rax
+0098: EB E8 ; jmp read_loop
+009A: 4D 89 E6 ; mov r14,r12
+009D: 49 BF 00 00 60 00 00 00 00 00 ; mov r15,0x600000
+00A7: 4D 39 F7 ; cmp r15,r14
+00AA: 0F 83 63 00 00 00 ; jae done_all
+00B0: E8 67 00 00 00 ; call skipws
+00B5: 4D 39 F7 ; cmp r15,r14
+00B8: 0F 83 55 00 00 00 ; jae done_all
+00BE: 41 0F B6 07 ; movzx eax,[r15]
+00C2: 3C 0A ; cmp al,10
+00C4: 75 05 ; jne not_empty
+00C6: 49 FF C7 ; inc r15
+00C9: EB DC ; jmp main_loop
+00CB: E8 65 00 00 00 ; call parse_name
+00D0: 48 89 C3 ; mov rbx,rax
+00D3: E8 44 00 00 00 ; call skipws
+00D8: 41 0F B6 07 ; movzx eax,[r15]
+00DC: 3C 3D ; cmp al,'='
+00DE: 74 0C ; je do_assign
+00E0: E8 45 01 00 00 ; call parse_expr
+00E5: E8 F3 01 00 00 ; call print_num
+00EA: EB 15 ; jmp skip_to_eol
+00EC: 49 FF C7 ; inc r15
+00EF: E8 36 01 00 00 ; call parse_expr
+00F4: 48 89 C6 ; mov rsi,rax
+00F7: 48 89 DF ; mov rdi,rbx
+00FA: E8 98 01 00 00 ; call set_var
+00FF: EB 00 ; jmp skip_to_eol
+0101: 4D 39 F7 ; cmp r15,r14
+0104: 73 A1 ; jae main_loop
+0106: 41 0F B6 07 ; movzx eax,[r15]
+010A: 49 FF C7 ; inc r15
+010D: 3C 0A ; cmp al,10
+010F: 75 F0 ; jne skip_to_eol
+0111: EB 94 ; jmp main_loop
+0113: B8 3C 00 00 00 ; mov eax,60
+0118: 31 FF ; xor edi,edi
+011A: 0F 05 ; syscall
+011C: 4D 39 F7 ; skipws: cmp r15,r14
+011F: 73 13 ; jae .sdone
+0121: 41 0F B6 07 ; movzx eax,[r15]
+0125: 3C 20 ; cmp al,' '
+0127: 74 06 ; je .sadv
+0129: 3C 09 ; cmp al,9
+012B: 74 02 ; je .sadv
+012D: EB 05 ; jmp .sdone
+012F: 49 FF C7 ; inc r15
+0132: EB E8 ; jmp .sl
+0134: C3 ; ret
+0135: 31 C0 ; parse_name: xor eax,eax
+0137: 31 C9 ; xor ecx,ecx
+0139: 4D 39 F7 ; cmp r15,r14
+013C: 73 21 ; jae .ndone
+013E: 41 0F B6 17 ; movzx edx,[r15]
+0142: 80 FA 61 ; cmp dl,'a'
+0145: 72 18 ; jb .ndone
+0147: 80 FA 7A ; cmp dl,'z'
+014A: 77 13 ; ja .ndone
+014C: 80 F9 40 ; cmp cl,64
+014F: 73 09 ; jae .nadv
+0151: 48 D3 E2 ; shl rdx,cl
+0154: 48 09 D0 ; or rax,rdx
+0157: 80 C1 08 ; add cl,8
+015A: 49 FF C7 ; inc r15
+015D: EB DA ; jmp .nl
+015F: C3 ; ret
+0160: 31 C0 ; parse_number: xor eax,eax
+0162: 4D 39 F7 ; cmp r15,r14
+0165: 73 20 ; jae .numdone
+0167: 41 0F B6 17 ; movzx edx,[r15]
+016B: 80 FA 30 ; cmp dl,'0'
+016E: 72 17 ; jb .numdone
+0170: 80 FA 39 ; cmp dl,'9'
+0173: 77 12 ; ja .numdone
+0175: 48 8D 04 80 ; lea rax,[rax+rax*4]
+0179: 48 01 C0 ; add rax,rax
+017C: 83 EA 30 ; sub edx,'0'
+017F: 48 01 D0 ; add rax,rdx
+0182: 49 FF C7 ; inc r15
+0185: EB DB ; jmp .numl
+0187: C3 ; ret
+0188: E8 8F FF FF FF ; parse_factor: call skipws
+018D: 41 0F B6 07 ; movzx eax,[r15]
+0191: 3C 28 ; cmp al,'('
+0193: 74 0A ; je .fparen
+0195: 3C 30 ; cmp al,'0'
+0197: 72 12 ; jb .fname
+0199: 3C 39 ; cmp al,'9'
+019B: 77 0E ; ja .fname
+019D: EB C1 ; jmp parse_number
+019F: 49 FF C7 ; .fparen: inc r15
+01A2: E8 83 00 00 00 ; call parse_expr
+01A7: 49 FF C7 ; inc r15
+01AA: C3 ; ret
+01AB: E8 85 FF FF FF ; .fname: call parse_name
+01B0: 48 89 C7 ; mov rdi,rax
+01B3: E8 B2 00 00 00 ; call get_var
+01B8: C3 ; ret
+01B9: E8 CA FF FF FF ; parse_term: call parse_factor
+01BE: 53 ; push rbx
+01BF: 48 89 C3 ; mov rbx,rax
+01C2: E8 55 FF FF FF ; .tl: call skipws
+01C7: 4D 39 F7 ; cmp r15,r14
+01CA: 73 59 ; jae .tdone
+01CC: 41 0F B6 07 ; movzx eax,[r15]
+01D0: 3C 2A ; cmp al,'*'
+01D2: 74 0A ; je .tmul
+01D4: 3C 2F ; cmp al,'/'
+01D6: 74 1D ; je .tdiv
+01D8: 3C 25 ; cmp al,'%'
+01DA: 74 31 ; je .tmod
+01DC: EB 47 ; jmp .tdone
+01DE: 49 FF C7 ; .tmul: inc r15
+01E1: E8 A2 FF FF FF ; call parse_factor
+01E6: 48 89 C1 ; mov rcx,rax
+01E9: 48 89 D8 ; mov rax,rbx
+01EC: 48 0F AF C1 ; imul rax,rcx
+01F0: 48 89 C3 ; mov rbx,rax
+01F3: EB CD ; jmp .tl
+01F5: 49 FF C7 ; .tdiv: inc r15
+01F8: E8 8B FF FF FF ; call parse_factor
+01FD: 48 89 C1 ; mov rcx,rax
+0200: 48 89 D8 ; mov rax,rbx
+0203: 48 99 ; cqo
+0205: 48 F7 F9 ; idiv rcx
+0208: 48 89 C3 ; mov rbx,rax
+020B: EB B5 ; jmp .tl
+020D: 49 FF C7 ; .tmod: inc r15
+0210: E8 73 FF FF FF ; call parse_factor
+0215: 48 89 C1 ; mov rcx,rax
+0218: 48 89 D8 ; mov rax,rbx
+021B: 48 99 ; cqo
+021D: 48 F7 F9 ; idiv rcx
+0220: 48 89 D3 ; mov rbx,rdx
+0223: EB 9D ; jmp .tl
+0225: 48 89 D8 ; .tdone: mov rax,rbx
+0228: 5B ; pop rbx
+0229: C3 ; ret
+022A: E8 8A FF FF FF ; parse_expr: call parse_term
+022F: 53 ; push rbx
+0230: 48 89 C3 ; mov rbx,rax
+0233: E8 E4 FE FF FF ; .el: call skipws
+0238: 4D 39 F7 ; cmp r15,r14
+023B: 73 28 ; jae .edone
+023D: 41 0F B6 07 ; movzx eax,[r15]
+0241: 3C 2B ; cmp al,'+'
+0243: 74 06 ; je .eadd
+0245: 3C 2D ; cmp al,'-'
+0247: 74 0F ; je .esub
+0249: EB 1A ; jmp .edone
+024B: 49 FF C7 ; .eadd: inc r15
+024E: E8 66 FF FF FF ; call parse_term
+0253: 48 01 C3 ; add rbx,rax
+0256: EB DB ; jmp .el
+0258: 49 FF C7 ; .esub: inc r15
+025B: E8 59 FF FF FF ; call parse_term
+0260: 48 29 C3 ; sub rbx,rax
+0263: EB CE ; jmp .el
+0265: 48 89 D8 ; .edone: mov rax,rbx
+0268: 5B ; pop rbx
+0269: C3 ; ret
+026A: 48 8B 04 25 00 22 60 00 ; get_var: mov rax,[nvars]
+0272: 31 C9 ; xor ecx,ecx
+0274: 48 39 C1 ; .gl: cmp rcx,rax
+0277: 73 1B ; jae .gnf
+0279: 48 8B 14 CD 00 20 60 00 ; mov rdx,[rcx*8+names]
+0281: 48 39 FA ; cmp rdx,rdi
+0284: 74 05 ; je .gfound
+0286: 48 FF C1 ; inc rcx
+0289: EB E9 ; jmp .gl
+028B: 48 8B 04 CD 00 21 60 00 ; .gfound: mov rax,[rcx*8+vals]
+0293: C3 ; ret
+0294: 31 C0 ; .gnf: xor eax,eax
+0296: C3 ; ret
+0297: 48 8B 04 25 00 22 60 00 ; set_var: mov rax,[nvars]
+029F: 31 C9 ; xor ecx,ecx
+02A1: 48 39 C1 ; .svl: cmp rcx,rax
+02A4: 73 1B ; jae .svappend
+02A6: 48 8B 14 CD 00 20 60 00 ; mov rdx,[rcx*8+names]
+02AE: 48 39 FA ; cmp rdx,rdi
+02B1: 74 05 ; je .svupdate
+02B3: 48 FF C1 ; inc rcx
+02B6: EB E9 ; jmp .svl
+02B8: 48 89 34 CD 00 21 60 00 ; .svupdate: mov [rcx*8+vals],rsi
+02C0: C3 ; ret
+02C1: 48 89 3C C5 00 20 60 00 ; .svappend: mov [rax*8+names],rdi
+02C9: 48 89 34 C5 00 21 60 00 ; mov [rax*8+vals],rsi
+02D1: 48 FF C0 ; inc rax
+02D4: 48 89 04 25 00 22 60 00 ; mov [nvars],rax
+02DC: C3 ; ret
+02DD: 48 BF 08 22 60 00 00 00 00 00 ; print_num: mov rdi,0x602208
+02E7: C6 47 1F 0A ; mov byte[rdi+31],10
+02EB: 48 C7 C1 1E 00 00 00 ; mov rcx,30
+02F2: 48 85 C0 ; test rax,rax
+02F5: 79 0C ; jns .ppos
+02F7: 48 F7 D8 ; neg rax
+02FA: 49 C7 C0 01 00 00 00 ; mov r8,1
+0301: EB 03 ; jmp .pconv
+0303: 45 31 C0 ; .ppos: xor r8d,r8d
+0306: 49 C7 C1 0A 00 00 00 ; .pconv: mov r9,10
+030D: 31 D2 ; .pdloop: xor edx,edx
+030F: 49 F7 F1 ; div r9
+0312: 80 C2 30 ; add dl,'0'
+0315: 88 14 0F ; mov [rdi+rcx],dl
+0318: 48 FF C9 ; dec rcx
+031B: 48 85 C0 ; test rax,rax
+031E: 75 ED ; jnz .pdloop
+0320: 4D 85 C0 ; test r8,r8
+0323: 74 07 ; jz .pnosign
+0325: C6 04 0F 2D ; mov byte[rdi+rcx],'-'
+0329: 48 FF C9 ; dec rcx
+032C: 48 8D 74 0F 01 ; .pnosign: lea rsi,[rdi+rcx+1]
+0331: BA 1F 00 00 00 ; mov edx,31
+0336: 48 29 CA ; sub rdx,rcx
+0339: B8 01 00 00 00 ; mov eax,1
+033E: BF 01 00 00 00 ; mov edi,1
+0343: 0F 05 ; syscall
+0345: C3 ; ret
+END_HEX

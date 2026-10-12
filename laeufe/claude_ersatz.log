@@ -1,0 +1,15 @@
+nohup: Eingabe wird ignoriert
+12 Anfragen, 4 gleichzeitig
+T1_c_runden_2 Runde 1: OK  2.6 s, 130 Tokens
+T1_c_runden_1 Runde 1: OK  3.3 s, 123 Tokens
+T1_bin_runden_2 Runde 1: OK  14.2 s, 1694 Tokens
+T4_c_runden_1 Runde 1: OK  5.1 s, 336 Tokens  ERSATZ claude-opus-4-8
+T1_bin_runden_1 Runde 1: Test 1: startet nicht (Exec format error)  20.9 s, 712 Tokens  ERSATZ claude-opus-4-8
+T4_c_runden_2 Runde 1: OK  4.4 s, 355 Tokens  ERSATZ claude-opus-4-8
+T1_bin_runden_1 Runde 2: OK  33.2 s, 3225 Tokens  ERSATZ claude-opus-4-8
+T4_bin_runden_2 Runde 1: OK  120.1 s, 10440 Tokens  ERSATZ claude-opus-4-8
+T4_bin_runden_1 Runde 1: OK  123.4 s, 10251 Tokens  ERSATZ claude-opus-4-8
+T7_c_runden_1 Runde 1: OK  9.6 s, 1075 Tokens
+T7_c_runden_2 Runde 1: OK  9.8 s, 1155 Tokens
+T7_bin_runden_1 Runde 1: OK  291.1 s, 26920 Tokens  ERSATZ claude-opus-4-8
+T7_bin_runden_2 Runde 1: OK  355.4 s, 32569 Tokens  ERSATZ claude-opus-4-8

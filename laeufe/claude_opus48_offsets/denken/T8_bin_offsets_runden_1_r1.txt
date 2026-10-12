@@ -1,0 +1,300 @@
+This is a genuinely hard task — hand-writing raw ELF64 machine code for a full expression interpreter that reads stdin, parses lines, handles assignments and print statements, and evaluates expressions with proper operator precedence. I'm thinking through how to structure this as directly assembled bytes rather than relying on a compiler.
+
+I'm sketching a memory layout using BSS sections: an 8KB input buffer, a names table and values table for 30 variables, a parse counter, a global cursor pointer, and an output buffer. I'm leaning toward a recursive descent parser design with a global `cur` and `end` variable tracking position in the input, since I'll need to preserve parse state across nested calls while hand-assembling everything carefully.
+
+I'm structuring the parser into layers: `skipws` for whitespace, `parse_expr` for addition/subtraction, `parse_term` for multiplication/division/modulo, and `parse_factor` for numbers, variable names, and parenthesized expressions. Since the language only deals with non-negative integers and there's no unary minus operator, factors don't need to handle negation directly—negative values can only arise from subtraction during computation. I'm deciding to dedicate register r15 as my own callee-saved convention for tracking the current parse position consistently across all function calls.
+
+Now I'm planning the register layout: r15 as the current parse pointer, r14 as the end-of-input pointer, with return values passed back through rax. Writing out `parse_expr`'s logic—it calls `parse_term` for the left value, then loops checking for '+' or '-' operators, advancing the pointer and accumulating the result accordingly. I need to be careful about preserving values across nested calls, likely using the stack rather than relying on registers like rbx that could get clobbered. This hand-assembled recursive descent parser is going to take many careful, systematic steps to get right.
+
+Sketching the `skipws` routine to advance past spaces and tabs, then moving to `parse_factor`: after skipping whitespace, it checks the current character—handling parentheses by recursing into `parse_expr`, digits by parsing a number, and anything else as an identifier to look up. Writing the number-parsing loop...
+
+For names, I'm encoding up to 8 lowercase letters into a packed 64-bit key by shifting each byte into position, then searching the names table for a matching key to get the index—this same approach works for assignment targets too. Now I'm shifting focus to the main loop, starting with reading all of stdin into an input buffer.
+
+I'm walking through the input line by line, skipping whitespace and handling empty lines, then need to figure out how to distinguish a "print expr" statement from a "name = expr" assignment since both start with lowercase letters—checking whether the identifier matches "print" followed by a non-letter character to treat it as the keyword rather than a variable name.
+
+My plan is to collect the leading identifier first, then peek at the following character: if it's '=', treat it as an assignment and advance past the identifier and equals sign; otherwise compare the identifier against "print" to decide if it's the print statement.
+
+For print, the collected identifier gets discarded since it's not needed. I also need to handle empty lines — just skip whitespace to the newline and continue — and after each statement, skip trailing spaces and consume the newline that ends the line.
+
+Now I'm planning variable storage: parallel arrays for names and values with a count tracker, with lookup returning an index or -1, and a set function that updates an existing variable or appends a new one. For reading variables in a factor, I just look up the index and fetch the value, assuming it's already assigned. Then I need a routine to convert a signed 64-bit value to decimal digits with a trailing newline for the print statement, writing the result to stdout.
+
+I decide to format each number into a small local buffer and write it with a syscall per print statement rather than buffering everything. For the conversion itself, I take the value in rax, track whether it's negative, negate if needed, then repeatedly divide by 10 to extract digits into the buffer in reverse order, prepending a minus sign if necessary.
+
+Still working out buffer layout... I need to place the digits backward and put the newline in the correct position after them, so I'm reconsidering the indexing to avoid overwriting positions incorrectly.
+
+Computing length as 32-start then writing from buf+start. Then I'll use idiv with rcx=10 for the division logic, and idiv conveniently truncates toward zero which matches C semantics for / and %.
+
+Now I'm planning the ELF layout: a single PT_LOAD segment at 0x400000 holding code and data, with BSS handled by setting memsz larger than filesz for uninitialized storage.
+
+I'm sizing up the BSS needs: input buffer, name/value tables, variable count, and number buffer, totaling around 8700 bytes, then figuring out where to place this region at vaddr 0x4a0000 so p_memsz covers it properly beyond the file-backed portion.
+
+Actually I realize it's safer to pick a bss base far from the code, like 0x600000, with p_memsz spanning from the code start to cover it entirely -- the loader will zero everything beyond the file-mapped bytes anyway, so this avoids any overlap risk even if it wastes some address space.
+
+Loading the ELF header at vaddr 0x400000 with entry at 0x400078 is standard. I'll set p_align to 0x1000 and memsz to 0x300000 so the segment comfortably covers the bss region (base 0x600000, size under 0x100000), and mark the segment RWX since I need write access for bss alongside read/exec for code.
+
+Now I'm laying out the bss buffers: inbuf at 0x600000 (8KB), names/vals arrays at 0x602000 and 0x602100, nvars counter at 0x602200, and a number-formatting buffer at 0x602208 -- all fitting comfortably within the mapped region.
+
+Writing the stdin read loop...
+
+Writing the main parsing loop...
+
+Writing skip-to-eol loop and program exit... Now I'm starting parse_name, which reads lowercase letters into a packed key value, returning it in rax.
+
+Still writing the name-parsing loop...
+
+Continuing the factor parser, I'm distinguishing parentheses, numeric literals, and identifiers, then dispatching to parse_number, parse_expr, or a variable lookup accordingly. Now I'm setting up parse_number to accumulate digit values into rax using a temporary register for the multiply-by-ten step.
+
+Simplifying the digit-parsing loop since edx is already zero-extended after the range check, I can subtract 0x30 directly without the redundant extra movzx. Now moving on to parse_term, which needs to handle multiplication, division, and modulo by first calling parse_factor to get the left operand, then saving rbx before processing the operator.
+
+Writing operator handling logic...
+
+Still writing expression parser...
+
+I'm checking that parse_expr correctly handles addition and subtraction by looping back after each operation, and verifying parse_factor's parenthesis handling recurses properly into parse_expr while preserving rbx. I also need to confirm skipws only touches al so it doesn't clobber registers the caller depends on.
+
+Wait, actually I realize skipws there would clobber rax which holds the paren's result value — that's a bug. But thinking it through, parse_expr's own loop already calls skipws before checking for operators, so by the time it returns, the cursor is already sitting right at the closing paren. That means I don't need an extra skipws call after parse_expr in the paren-handling code at all; I can just skip the '(' and later consume ')' directly.
+
+For parse_factor, skipws runs before reading the character, and parse_number works fine since it re-reads from r15 rather than relying on any register the skipws might clobber. Now I need to check how the print-line parsing calls parse_name to recognize the "print" keyword.
+
+I'm sketching get_var: it linearly scans the names array for a matching key and returns the corresponding value from vals, falling back to zero if not found. I need to be careful about addressing, since combining an absolute base with a register index requires proper RIP-relative or LEA handling in x86-64.
+
+Figuring out the SIB encoding for absolute addressing...
+
+Writing set_var logic, scanning names for a matching key to update in place or appending a new entry and bumping the count, then working out the absolute addressing encoding for the nvars load.
+
+Encoding print_num...
+
+Still writing number-to-string logic...
+
+So the first character sits at index rcx+1, with the newline fixed at index 31, giving length = 31 - rcx. I'll use that formula directly rather than incrementing separately.
+
+Now I'm writing the syscall sequence: computing rsi as the message start address with the rcx offset, setting edx to the length, loading eax with 1 for sys_write, and preparing edi as the stdout fd, being careful about the order since rdi still holds the buffer pointer.
+
+Then I verify register preservation across the whole program: print_num clobbers rax, rcx, rdx, rsi, rdi, r8, r9 but leaves rbx, r14, r15, r12 untouched, and I trace through main's loop confirming r14/r15 stay consistent across all the parse, skipws, get_var, set_var, and print_num calls.
+
+Checking the assignment path specifically: parse_name sets rbx with the key, and since parse_expr saves and restores rbx internally, the key survives intact through to the set_var call where I pass rdi=key, rsi=value.
+
+I'm also verifying stack balance across the recursive parse_expr/parse_term/parse_factor calls — each pushes and pops rbx symmetrically, so even without strict 16-byte alignment concerns (no libc calls here), the stack stays consistent through nested calls.
+
+Now I'm planning the byte-level assembly: fixing the code's base virtual address, then walking through each instruction in order to compute its offset so I can resolve call and jump displacements by hand. Laying out instructions and labels sequentially...
+
+Writing read loop assembly...
+
+Still writing assembly logic...
+
+Still writing assembly...
+
+Computing exact offsets manually...
+
+Still computing offsets...
+
+Computing jump reach...
+
+Still encoding assignment bytecode...
+
+Still computing offsets...
+
+Computing the remaining jump offsets for skipws, then starting on parse_name, zeroing eax and ecx before beginning the name-length loop comparing r15 against r14.
+
+I'm now encoding the character classification checks for the name parser — testing whether the byte is lowercase a-z, bounds-checking cl against 64, and setting up the shift logic for building the packed name value.
+
+Then I finish assembling the advance and loop-back logic: incrementing the pointer, jumping back to the loop start, and resolving the ret instruction for .ndone. Now I'm computing the final relative jump offsets to patch the earlier jae/jb branches targeting .ndone at offset 231.
+
+Starting parse_number: clearing eax, then beginning the digit loop that compares the pointer against the end, jumps out when done, loads the next byte, and checks it against '0'.
+
+Still tracing opcodes...
+
+Filling in the last jump offset, then moving into parse_factor: it skips whitespace, peeks at the next byte, and branches based on whether it's an opening paren, a digit, or a name character.
+
+Still computing byte offsets...
+
+Still computing opcode offsets...
+
+Still encoding division opcodes...
+
+Computing the done-label exit code and finishing up the term-parsing routine, then resolving all the local jump offsets for the division/modulo branches back to their correct targets.
+
+Now I'm assembling parse_expr: calling parse_term, saving the result in rbx, then entering the expression loop label where I'll skip whitespace and compare the next token pointers.
+
+Checking for a '+' or '-' character after skipping whitespace, branching to .eadd or .esub accordingly, or falling to .edone if neither matches. For .eadd, I increment the pointer past the '+' and call parse_term again...
+
+I'm finishing the return sequence for parse_expr, then patching all the local jump offsets with their computed relative values now that the targets are known. Next I'm starting on get_var, loading the variable count from memory.
+
+Now I'm writing the lookup loop for get_var: comparing the search index against the variable count, jumping out if not found, loading each name slot, comparing it against the target, and jumping to a found label or looping back to check the next entry.
+
+Finishing the jump offsets for get_var, then moving into set_var — comparing against stored variable count, iterating through names to find a match, and preparing to jump to an append path if no match found.
+
+Still encoding instruction bytes...
+
+Now I'm incrementing rax and storing the new count into nvars, then returning, before patching the jump offsets for .svappend and .svupdate in the set_var routine.
+
+Moving into print_num, I load rdi with the address of a fixed buffer, set the newline byte at offset 31, and begin setting up rcx as a divisor for digit conversion.
+
+I'm then checking if rax is negative via test and jns, and if so negating it and setting r8 to 1 as a sign flag before continuing the conversion logic.
+
+Still writing conversion routine...
+
+Still encoding instructions, continuing the loop with decrement, zero tests, and the sign-byte write for the negative case.
+
+Still encoding syscall exit sequence...
+
+Now I'm computing the relative offset for the jns jump back to the positive-number print label.
+
+With total code size settled at 718 bytes, I'm now working through the remaining forward references — filling in jump/call displacements for labels like read_loop, main_loop, parse_name, parse_number, parse_factor, parse_term, parse_expr, and get_var based on their recorded byte offsets.
+
+Still computing jump offsets...
+
+Still computing jump offsets...
+
+Still computing call offsets...
+
+Verifying the remaining rel32 byte conversions confirms they're all correct. Now I'm moving on to checking the REX prefix encoding for mov r12, imm64, which needs both the W and B bits set.
+
+Still encoding instructions...
+
+Encoding more register-to-register instructions...
+
+Still encoding opcodes...
+
+Still encoding instructions...
+
+Still verifying opcodes...
+
+Still verifying opcodes...
+
+Now I'm double-checking the main loop control flow: the bounds checks before and after skipws, and confirming the movzx/cmp against newline byte 10 work correctly to detect line breaks when reading characters.
+
+Lines with only trailing spaces still get consumed properly by skipws and treated as empty lines. For non-empty lines, the grammar guarantees the first token is always letters (either a variable name or "print"), so parse_name handles both assignment and print statements correctly without extra branching.
+
+Checking stack discipline: rbx gets pushed in parse_term and parse_expr, but since I never pop beyond what's pushed and don't need 16-byte alignment for the syscalls I'm using, the stack stays balanced throughout parsing.
+
+Now I'm moving on to constructing the ELF header and program header.
+
+Writing ELF header bytes...
+
+Still computing header fields...
+
+I'm verifying the alignment constraint holds since p_vaddr and p_offset are both congruent mod 0x1000, and confirming the total file size comes out to 838 bytes with p_filesz set to 0x346.
+
+I'm also checking that the BSS region used for the buffer at 0x602208 falls within the mapped segment's memsz range, since it's zero-initialized and writable but not file-backed.
+
+The entry point state is fine since rsp holding argc isn't used, and registers like r12 are explicitly initialized. In the read loop, I'm verifying that checking rax after syscall with a signed comparison correctly treats negative errors as EOF while still allowing large positive byte counts through.
+
+Now I'm verifying the jump offsets for the conditional branches land correctly at their targets, then assembling the full machine code byte-by-byte with offsets. Writing the byte listing...
+
+Still tracing disassembly...
+
+Still tracing the disassembly...
+
+Still tracing disassembly...
+
+Still writing assembly routines...
+
+Finishing the syscall exit sequence, then double-checking that several jump offsets I computed earlier match up correctly with their target addresses by verifying the relative displacement arithmetic against the byte positions.
+
+Still verifying jump offsets...
+
+Still verifying jump offsets...
+
+Still verifying jump offsets...
+
+Checking the remaining jumps confirms they're all consistent too. Now I'm converting the code-relative offsets into file offsets by adding 0x78, and mapping out the file layout starting with the ELF header and program header occupying the first 0x78 bytes.
+
+Writing the hex dump bytes...
+
+I'm recalculating the exact byte offsets for each ELF header field—e_type, e_machine, e_version, e_entry, e_phoff, e_shoff, and the rest—to make sure I'm reading the right bytes from the hex dump.
+
+Verifying the remaining header bytes match row by row, then moving into the program header at offset 0x40, checking its type, flags, and offset fields.
+
+Finishing the program header fields, which end at offset 0x78 where the code segment begins. Now I'm mapping out each instruction's file offset by adding 0x78 to its relative position so I can list the code bytes with correct offsets.
+
+Still computing offset mappings...
+
+Still mapping offsets...
+
+Still mapping offsets...
+
+Still computing offset mappings...
+
+Still converting offsets...
+
+Still mapping offsets...
+
+I've finished computing the relocation table through the end of the file, confirming the total size comes out to 0x346 bytes. Now I need to format this as a proper hex dump with contiguous offsets, and I should double-check the recursive calls in parse_term and parse_expr for correctness.
+
+Verifying the register usage, I confirm skipws only touches eax and flags, leaving rbx/rcx/rdx intact, so the loops in parse_term stay safe across whitespace skipping. I'm now checking whether parse_factor could clobber rbx when it recurses into parse_name, parse_number, or parse_expr.
+
+Since parse_expr properly saves and restores rbx, and neither parse_name nor get_var touch it, our accumulator in term survives nested factor calls—including parenthesized subexpressions. The rcx temp register used in term is also fine since it gets reassigned right after any factor call that might have used it internally.
+
+For division, I set rax to the accumulated value, use cqo to sign-extend into rdx:rax, then idiv by rcx holding the divisor from the second factor call—this is correct since idiv expects the dividend split across rdx:rax. I'm also confirming that the number-parsing path in parse_factor works correctly even though it jumps (rather than calls) into parse_number—since the return address was already pushed by the original call into parse_factor, parse_number's ret correctly returns to whoever called parse_factor.
+
+Now I'm tracing through how "print" versus assignment is distinguished: parse_name reads letters until hitting a space or '=', skipws advances past any spaces, and then I check the next character. For assignments like "y = x+1", that next character is '=', while for "print x" it's the start of the expression, not '='. This logic seems sound for both cases.
+
+I'm also checking the edge case of "y=5" with no space before the expression — parse_expr's internal skipws handles any leading whitespace there too. And since each statement is confined to one line, I don't need to worry about embedded newlines inside an expression.
+
+For the print_num routine, I'm verifying the division logic: after taking the absolute value, rax is guaranteed non-negative, so unsigned division by 10 is safe, and the zero case is handled correctly since jns treats 0 as non-negative, setting the sign flag r8 to 0 before entering the digit-conversion loop.
+
+Tracing through the value 0 by hand confirms the digit buffer ends up with '0' at the correct offset, the length computation comes out to 2, and the output correctly writes '0' followed by a newline — so that case checks out. I'm now moving on to verify a negative example like -7 to make sure the sign handling and digit loop work there too.
+
+Continuing the trace: 1/10=0 remainder 1, giving '1' at index 28, confirming output "123\n" correctly.
+
+Now I'm double-checking the segment permissions — RWX flags should work fine on typical Linux even if strict W^X systems might object, and the entry point falls within the mapped executable region. I'm also considering whether bss needs explicit zeroing, but since the kernel zeroes anonymous pages automatically, that should be handled.
+
+I'm verifying the read loop logic: requesting 8192 bytes each time is safe since input is guaranteed under 4000 bytes, so partial reads just loop until a zero-byte read signals EOF. Now I'm preparing to write out the final hex dump, laying out header rows and instructions line by line while making sure offsets align correctly.
+
+Still double-checking instruction encodings...
+
+Checking a few more encodings: mov rdi with the 64-bit immediate address, mov rcx with an immediate value, and verifying the SIB-based absolute addressing for nvars, names, and vals all produce the correct little-endian displacement bytes — all look correct.
+
+Now I'm verifying memory layout: inbuf (0x600000, 8192 bytes) ends exactly where names (0x602000) begins, followed by vals (0x602100), nvars (0x602200), and numbuf (0x602208), all fitting within range with no overlaps.
+
+I'm double-checking the unsigned comparison logic for pointer bounds — comparing r15 and r14 with `cmp` then `jae` correctly stops parsing when r15 reaches or exceeds r14, used consistently in both number and name parsing loops. I'm fairly confident in this, and now I want to verify how `parse_name` handles the initial shift case.
+
+For two-character names like "ab", the first character lands in bits 0-7 and the second shifts into bits 8-15, giving a consistent key value (0x6261) regardless of whether it's used in a get or set context — that checks out. I'm also confirming that `parse_name` correctly handles cases with no whitespace, like "print(x+1)" or "x=5", since it stops reading letters as soon as it hits a non-alphabetic character like '(' or '=', so spacing isn't actually required for correct parsing.
+
+I'm also verifying edge cases: a line like "a = b" works fine since factor parsing handles variable names through parse_name plus get_var. The grammar guarantees every line is either a print or assignment, so there's no need to worry about bare name statements or print with no expression — those just can't occur given how the parser is structured.
+
+That edge case won't occur with valid input, so I can move on to finalizing the byte-level dump, transcribing each instruction's offset and raw bytes carefully from my table.
+
+Writing out syscall setup and mmap instructions...
+
+Still tracing disassembly...
+
+Still tracing disassembly...
+
+Still tracing disassembly...
+
+Still tracing disassembly...
+
+Still writing assembly...
+
+I'm cross-checking each relocated offset against the expected file positions by adding the base shift of 0x78, confirming they all align correctly before moving to verify offset 0x233.
+
+Continuing to verify offsets through the print_num region, checking each instruction's byte length against the next address in sequence—all tracking correctly so far.
+
+Syscall and ret finish cleanly. Now I'm verifying all the jump offsets: jnz back to .pdloop checks out at 0x30D, jz to .pnosign lands at 0x32C, jns to .ppos resolves to 0x303, and jmp to .pconv hits 0x306 -- everything matches. With that confirmed, I'm moving on to double-check the main routine.
+
+Working through the 0x100 boundary now: cmp, jae back to main_loop at 0xA7 checks out, then movzx, inc, cmp al, jne back to skip_to_eol at 0x101 verifies, and the final jmp lands back at 0xA7 for done_all. All consistent so far -- continuing to verify the jae at 0xAA.
+
+Continuing to trace calls: the jae at 0xB8 confirms landing at done_all 0x113, calls to skipws at 0xB0 and 0xD3 both resolve to 0x11C, the call to parse_name at 0xCB resolves to 0x135, and the call to parse_expr at 0xE0 resolves to 0x22A. All offsets check out correctly.
+
+Verifying more call targets...
+
+Still verifying call offsets...
+
+All calls check out, so now I'm tracing the term parser's conditional jumps for mul/div/mod cases and confirming each offset lands on the right label.
+
+Still verifying jump offsets... confirming .esub, .edone, and .el branches align correctly, then moving to check get_var/set_var jumps against .gnf, .gfound, and .gl targets.
+
+Still verifying jump offsets...
+
+Still verifying jump offsets...
+
+All jumps check out now. Edge case: empty input makes r14 equal r15 immediately, so main_loop correctly exits with code 0. The loop also re-reads rsi=r12 each iteration, confirming multiple reads are handled properly.
+
+I'm also confirming the register encoding for the `[r15]` memory access — with REX.B extending rm=111, it correctly resolves to [r15] rather than the SIB or RIP-relative special cases.
+
+Now I'm checking whether the segment's memsz is large enough to cover the 0x600000 write address, since the segment starts at vaddr 0x400000 and the write location needs to fall within its mapped memory range.
+
+The file-backed mapping zero-fills the remainder of the last partial page and extends with anonymous zero pages up to memsz, all writable since the segment has the W flag — so I'm confident this is correct. Now I'll lay out the full hex dump including the header, presented as 16-byte lines.
+

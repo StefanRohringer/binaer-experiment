@@ -1,0 +1,326 @@
+[
+ {
+  "aufgabe": "T1",
+  "modus": "bin",
+  "lauf": 1,
+  "ok": false,
+  "info": "Test 1: startet nicht (Exec format error)",
+  "groesse_byte": 200,
+  "antwort_zeichen": 1551
+ },
+ {
+  "aufgabe": "T1",
+  "modus": "bin",
+  "lauf": 2,
+  "ok": false,
+  "info": "abgeschnitten: Schleife in der Antwort",
+  "groesse_byte": null,
+  "antwort_zeichen": 9512
+ },
+ {
+  "aufgabe": "T1",
+  "modus": "bin",
+  "lauf": 3,
+  "ok": false,
+  "info": "Test 1: startet nicht (Exec format error)",
+  "groesse_byte": 194,
+  "antwort_zeichen": 599
+ },
+ {
+  "aufgabe": "T1",
+  "modus": "c",
+  "lauf": 1,
+  "ok": true,
+  "info": "1/1 Tests bestanden",
+  "groesse_byte": 15960,
+  "antwort_zeichen": 185
+ },
+ {
+  "aufgabe": "T1",
+  "modus": "c",
+  "lauf": 2,
+  "ok": true,
+  "info": "1/1 Tests bestanden",
+  "groesse_byte": 15960,
+  "antwort_zeichen": 127
+ },
+ {
+  "aufgabe": "T1",
+  "modus": "c",
+  "lauf": 3,
+  "ok": true,
+  "info": "1/1 Tests bestanden",
+  "groesse_byte": 15960,
+  "antwort_zeichen": 94
+ },
+ {
+  "aufgabe": "T2",
+  "modus": "bin",
+  "lauf": 1,
+  "ok": false,
+  "info": "Test 1: startet nicht (Exec format error)",
+  "groesse_byte": 653,
+  "antwort_zeichen": 1976
+ },
+ {
+  "aufgabe": "T2",
+  "modus": "bin",
+  "lauf": 2,
+  "ok": false,
+  "info": "Test 1: startet nicht (Exec format error)",
+  "groesse_byte": 246,
+  "antwort_zeichen": 755
+ },
+ {
+  "aufgabe": "T2",
+  "modus": "bin",
+  "lauf": 3,
+  "ok": false,
+  "info": "abgeschnitten: Schleife in der Antwort",
+  "groesse_byte": null,
+  "antwort_zeichen": 6008
+ },
+ {
+  "aufgabe": "T2",
+  "modus": "c",
+  "lauf": 1,
+  "ok": true,
+  "info": "1/1 Tests bestanden",
+  "groesse_byte": 15968,
+  "antwort_zeichen": 129
+ },
+ {
+  "aufgabe": "T2",
+  "modus": "c",
+  "lauf": 2,
+  "ok": true,
+  "info": "1/1 Tests bestanden",
+  "groesse_byte": 15968,
+  "antwort_zeichen": 125
+ },
+ {
+  "aufgabe": "T2",
+  "modus": "c",
+  "lauf": 3,
+  "ok": true,
+  "info": "1/1 Tests bestanden",
+  "groesse_byte": 15968,
+  "antwort_zeichen": 125
+ },
+ {
+  "aufgabe": "T3",
+  "modus": "bin",
+  "lauf": 1,
+  "ok": false,
+  "info": "Test 1: startet nicht (Exec format error)",
+  "groesse_byte": 276,
+  "antwort_zeichen": 845
+ },
+ {
+  "aufgabe": "T3",
+  "modus": "bin",
+  "lauf": 2,
+  "ok": false,
+  "info": "Test 1: startet nicht (Exec format error)",
+  "groesse_byte": 349,
+  "antwort_zeichen": 1064
+ },
+ {
+  "aufgabe": "T3",
+  "modus": "bin",
+  "lauf": 3,
+  "ok": false,
+  "info": "Test 1: startet nicht (Exec format error)",
+  "groesse_byte": 446,
+  "antwort_zeichen": 1112
+ },
+ {
+  "aufgabe": "T3",
+  "modus": "c",
+  "lauf": 1,
+  "ok": true,
+  "info": "1/1 Tests bestanden",
+  "groesse_byte": 16008,
+  "antwort_zeichen": 655
+ },
+ {
+  "aufgabe": "T3",
+  "modus": "c",
+  "lauf": 2,
+  "ok": true,
+  "info": "1/1 Tests bestanden",
+  "groesse_byte": 16008,
+  "antwort_zeichen": 353
+ },
+ {
+  "aufgabe": "T3",
+  "modus": "c",
+  "lauf": 3,
+  "ok": true,
+  "info": "1/1 Tests bestanden",
+  "groesse_byte": 16008,
+  "antwort_zeichen": 1242
+ },
+ {
+  "aufgabe": "T4",
+  "modus": "bin",
+  "lauf": 1,
+  "ok": false,
+  "info": "Test 1: startet nicht (Exec format error)",
+  "groesse_byte": 260,
+  "antwort_zeichen": 797
+ },
+ {
+  "aufgabe": "T4",
+  "modus": "bin",
+  "lauf": 2,
+  "ok": false,
+  "info": "abgeschnitten: Schleife in der Antwort",
+  "groesse_byte": null,
+  "antwort_zeichen": 6006
+ },
+ {
+  "aufgabe": "T4",
+  "modus": "bin",
+  "lauf": 3,
+  "ok": false,
+  "info": "Test 1: startet nicht (Exec format error)",
+  "groesse_byte": 315,
+  "antwort_zeichen": 1610
+ },
+ {
+  "aufgabe": "T4",
+  "modus": "c",
+  "lauf": 1,
+  "ok": true,
+  "info": "3/3 Tests bestanden",
+  "groesse_byte": 16136,
+  "antwort_zeichen": 295
+ },
+ {
+  "aufgabe": "T4",
+  "modus": "c",
+  "lauf": 2,
+  "ok": true,
+  "info": "3/3 Tests bestanden",
+  "groesse_byte": 16184,
+  "antwort_zeichen": 368
+ },
+ {
+  "aufgabe": "T4",
+  "modus": "c",
+  "lauf": 3,
+  "ok": true,
+  "info": "3/3 Tests bestanden",
+  "groesse_byte": 16184,
+  "antwort_zeichen": 387
+ },
+ {
+  "aufgabe": "T5",
+  "modus": "bin",
+  "lauf": 1,
+  "ok": false,
+  "info": "abgeschnitten: Schleife in der Antwort",
+  "groesse_byte": null,
+  "antwort_zeichen": 6006
+ },
+ {
+  "aufgabe": "T5",
+  "modus": "bin",
+  "lauf": 2,
+  "ok": false,
+  "info": "Test 1: startet nicht (Exec format error)",
+  "groesse_byte": 278,
+  "antwort_zeichen": 850
+ },
+ {
+  "aufgabe": "T5",
+  "modus": "bin",
+  "lauf": 3,
+  "ok": false,
+  "info": "ungerade Hexlänge",
+  "groesse_byte": null,
+  "antwort_zeichen": 578
+ },
+ {
+  "aufgabe": "T5",
+  "modus": "c",
+  "lauf": 1,
+  "ok": false,
+  "info": "Test 1: falsche Ausgabe b'0\\n'",
+  "groesse_byte": 16320,
+  "antwort_zeichen": 552
+ },
+ {
+  "aufgabe": "T5",
+  "modus": "c",
+  "lauf": 2,
+  "ok": true,
+  "info": "4/4 Tests bestanden",
+  "groesse_byte": 16096,
+  "antwort_zeichen": 639
+ },
+ {
+  "aufgabe": "T5",
+  "modus": "c",
+  "lauf": 3,
+  "ok": true,
+  "info": "4/4 Tests bestanden",
+  "groesse_byte": 16400,
+  "antwort_zeichen": 733
+ },
+ {
+  "aufgabe": "T6",
+  "modus": "bin",
+  "lauf": 1,
+  "ok": false,
+  "info": "Test 1: startet nicht (Exec format error)",
+  "groesse_byte": 1023,
+  "antwort_zeichen": 3086
+ },
+ {
+  "aufgabe": "T6",
+  "modus": "bin",
+  "lauf": 2,
+  "ok": false,
+  "info": "abgeschnitten: Schleife in der Antwort",
+  "groesse_byte": null,
+  "antwort_zeichen": 6006
+ },
+ {
+  "aufgabe": "T6",
+  "modus": "bin",
+  "lauf": 3,
+  "ok": false,
+  "info": "keine Abgabe/Markierung",
+  "groesse_byte": null,
+  "antwort_zeichen": 0
+ },
+ {
+  "aufgabe": "T6",
+  "modus": "c",
+  "lauf": 1,
+  "ok": true,
+  "info": "4/4 Tests bestanden",
+  "groesse_byte": 16072,
+  "antwort_zeichen": 551
+ },
+ {
+  "aufgabe": "T6",
+  "modus": "c",
+  "lauf": 2,
+  "ok": true,
+  "info": "4/4 Tests bestanden",
+  "groesse_byte": 16136,
+  "antwort_zeichen": 493
+ },
+ {
+  "aufgabe": "T6",
+  "modus": "c",
+  "lauf": 3,
+  "ok": true,
+  "info": "4/4 Tests bestanden",
+  "groesse_byte": 16136,
+  "antwort_zeichen": 450
+ }
+]

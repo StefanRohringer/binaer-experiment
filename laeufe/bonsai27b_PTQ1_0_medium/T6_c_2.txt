@@ -1,0 +1,30 @@
+BEGIN_C
+#include <stdio.h>
+#include <stdlib.h>
+
+static int cmp(const void *a, const void *b)
+{
+    int x = *(const int *)a;
+    int y = *(const int *)b;
+    return (x > y) - (x < y);
+}
+
+int main(void)
+{
+    int nums[100];
+    int count = 0;
+    int val;
+
+    while (count < 100 && scanf("%d", &val) == 1) {
+        nums[count++] = val;
+    }
+
+    qsort(nums, (size_t)count, sizeof(int), cmp);
+
+    for (int i = 0; i < count; i++) {
+        printf("%d\n", nums[i]);
+    }
+
+    return 0;
+}
+END_C

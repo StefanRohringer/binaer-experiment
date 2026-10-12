@@ -1,0 +1,40 @@
+Dies ist ein minimales statisches ELF64-Programm. Es hat einen einzigen ladbaren Programm-Header, keine Section-Header und läuft ohne libc.
+
+**Aufbau der Datei**
+
+| Offset | Größe | Inhalt |
+|---|---|---|
+| 0x00 | 64 Bytes | ELF-Header |
+| 0x40 | 56 Bytes | Programm-Header (PT_LOAD, R+X, lädt die gesamte Datei nach 0x400000) |
+| 0x78 | 33 Bytes | Code, Einsprungpunkt 0x400078 |
+| 0x99 | 11 Bytes | Text `"Hallo Welt\n"` |
+
+Die Datei ist insgesamt 0xA4 = 164 Bytes groß.
+
+**Maschinencode**
+
+```
+b8 01 00 00 00        mov eax, 1        ; sys_write
+bf 01 00 00 00        mov edi, 1        ; stdout
+48 8d 35 10 00 00 00  lea rsi, [rip+16] ; -> Text
+ba 0b 00 00 00        mov edx, 11       ; Länge
+0f 05                 syscall
+b8 3c 00 00 00        mov eax, 60       ; sys_exit
+31 ff                 xor edi, edi      ; Exit-Code 0
+0f 05                 syscall
+```
+
+BEGIN_HEX
+7f 45 4c 46 02 01 01 00 00 00 00 00 00 00 00 00
+02 00 3e 00 01 00 00 00 78 00 40 00 00 00 00 00
+40 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+00 00 00 00 40 00 38 00 01 00 40 00 00 00 00 00
+01 00 00 00 05 00 00 00 00 00 00 00 00 00 00 00
+00 00 40 00 00 00 00 00 00 00 40 00 00 00 00 00
+a4 00 00 00 00 00 00 00 a4 00 00 00 00 00 00 00
+00 10 00 00 00 00 00 00
+b8 01 00 00 00 bf 01 00 00 00 48 8d 35 10 00 00
+00 ba 0b 00 00 00 0f 05 b8 3c 00 00 00 31 ff 0f
+05
+48 61 6c 6c 6f 20 57 65 6c 74 0a
+END_HEX

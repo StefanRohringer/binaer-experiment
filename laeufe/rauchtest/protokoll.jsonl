@@ -1,0 +1,2 @@
+{"datei": "runden/T1_bin_runden_1_r1.txt", "runde": 1, "sekunden": 14.1, "usage": {"prompt_tokens": 381, "completion_tokens": 1673}, "finish_reason": "stop", "fehler": null, "ok": true, "info": "1/1 Tests bestanden", "zeit": "2026-10-12T20:22:52.919683"}
+{"datei": "T1_bin_runden_1.txt", "sekunden": 14.1, "usage": {"prompt_tokens": 381, "completion_tokens": 1673}, "finish_reason": "stop", "fehler": null, "zeit": "2026-10-12T20:22:52.919767", "runden": 1, "tokens_gesamt": 1673}

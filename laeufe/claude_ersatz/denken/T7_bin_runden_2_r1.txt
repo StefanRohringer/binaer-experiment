@@ -1,0 +1,182 @@
+I'm considering how to hand-craft a raw ELF64 executable for an expression evaluator, planning out the core steps like reading stdin input and parsing it, since writing machine code by hand is tricky and error-prone.
+
+For the parsing logic itself, I'm sketching a recursive descent design with expression/term/factor levels for handling precedence and parentheses, and thinking through how to track a pointer into the buffer across recursive calls using a register.
+
+For the actual executable, I'm planning the ELF structure: a single RWX-loaded segment at 0x400000 containing headers, code, and a writable buffer region so I can read input directly into memory without needing a separate BSS setup.
+
+I'll just compute the file size and place the buffer right after it in memory. Now I'm planning the assembly structure, deciding to keep the cursor pointer in a memory variable rather than a register since it's simpler for the nested recursive parsing functions to share without saving/restoring state, and sketching out helper routines like skip_spaces and peek that operate on this shared cursor.
+
+Writing number parsing logic...
+
+I'm sketching the expression parser, planning to use a callee-saved register to hold the left-hand side value while looping through operators so it survives the recursive calls to parseTerm.
+
+Still writing parser logic...
+
+Writing parseFactor logic...
+
+Writing parseExpr logic...
+
+Writing parseExpr loop logic...
+
+Working out memory addressing...
+
+Writing the number parser loop...
+
+I realize a simpler 32-bit zero-extend works fine here, simplifying the instruction. Now I'm sketching the program's entry point: reading a line from stdin into a buffer via sys_read with the right register setup, then planning to null-terminate the input based on bytes read.
+
+Still writing assembly setup...
+
+After that I'll write print_number, which converts rax to a signed decimal string by building digits backward into a buffer, then exits via syscall 60.
+
+Still writing digit-extraction loop...
+
+Checking the zero case: the loop runs once since rax=0 triggers a single division producing '0', and I need to verify the zero-test exits correctly afterward.
+
+Now I'm working through the division setup, clearing rdx before dividing by rcx for unsigned arithmetic, and figuring out how to load 32-bit addresses into registers like rsi and r8 using zero-extended immediates since all addresses stay under 4GB.
+
+I'm laying out the ELF file structure now: 64-byte header, one 56-byte program header, then code starting at file offset 0x78 with entry point at virtual address 0x400078, so I can track exact byte offsets as I assemble each instruction sequentially.
+
+For globals, I'm planning to place a cursor, a 256-byte buffer, and a 32-byte output buffer at a page-aligned address after the code, likely around 0x401000, and extend the segment's memsz to cover them once I know the final code size.
+
+Setting p_flags to RWX works since the kernel zero-fills from filesz to memsz within the segment, so as long as the code stays under 0x1000 bytes the BSS region is safely zeroed. I'll set p_memsz to 0x2000 for safety margin.
+
+Now I'm laying out memory addresses for the current pointer, buffer, and output buffer, then planning the function structure: _start, parseExpr, parseTerm, parseFactor, parse_number, skip_spaces, and print_number. Since calls between these functions need relative offsets, I'll encode each function sequentially and compute addresses as I go.
+
+Writing machine code bytes...
+
+Still writing assembly bytes...
+
+Adding exit syscall and tallying up the total byte count for _start, which comes to 53 bytes placing it at offset 0x78 through 0xAD. Now I'm tracking the exact offsets of the call instructions so I can later compute their rel32 targets.
+
+Mapping out _start ending at offset 173 (0xAD), then beginning the parseExpr function at that offset. I'm tracing through its instructions: calling parseTerm, then looping with calls to skip_spaces, loading the current pointer, reading a byte, and comparing it against '+' to decide whether to jump to a plus-handling branch.
+
+Still writing bytecode...
+
+Now I need to compute the actual byte offsets for each instruction sequentially, starting from PE=173, tracking where each encoded instruction lands so I can resolve the relative jump targets.
+
+Still computing offsets...
+
+Finishing the minus branch and loop jump closes out parseExpr at offset 262, then I'm moving on to lay out parseTerm with the same structure but using multiply and divide operators instead.
+
+Still writing opcode encoding...
+
+Now I'm computing byte offsets for each instruction in the division handler, tracking jump target addresses sequentially starting from position 262.
+
+Still writing assembly offsets...
+
+Now parseTerm wraps up at offset 354, and I'm starting parseFactor, laying out the instructions that skip spaces, load the current pointer, check for an opening parenthesis, and branch to either parse a parenthesized expression or fall through to parsing a number.
+
+Still computing offsets...
+
+Working through the full offset chain for parseFactor, I land on 412 as the end address, then begin laying out parse_number starting there with PN=412.
+
+Writing the digit-loop encoding...
+
+Still computing offsets...
+
+Finishing the offset calculations, parse_number ends at address 473, and now I'm starting to lay out skip_spaces at that same address, beginning with pushing rax and rcx onto the stack.
+
+Now I'm calculating byte offsets for each instruction starting at address 473, tracking how skip_spaces lays out through its loop and done label, finishing at 514. Next I'll move on to working out print_number.
+
+Writing machine code for number output...
+
+Still writing assembly...
+
+Now I'm double-checking the length calculation by subtracting the digit pointer from the buffer end, confirming the zero-extension works correctly, then adding the syscall exit sequence and starting to compute byte offsets for each instruction starting from address 514.
+
+Still calculating offsets...
+
+I finish mapping out print_number's instruction offsets, landing on a total file size of 613 bytes, so the vaddr end is 0x400000+613. Now I need to work out all the rel32 values, remembering that call/jmp displacements are relative to the address of the next instruction.
+
+I'm tabulating function start offsets and label addresses for _start, parseExpr, parseTerm, parseFactor, parse_number, skip_spaces, and print_number, along with their internal loop and branch labels, so I can compute each jump's target minus the next-instruction offset.
+
+Computing rel32 values...
+
+Still computing branch offsets...
+
+Still computing jump offsets...
+
+I'm verifying the near jcc encoding format and then working out the byte layout for storing the CUR and BUF addresses into the mov instruction.
+
+Now I'm laying out the complete ELF header byte-by-byte, starting with the magic number, class, data encoding, version, and OSABI fields, then moving into e_type, e_machine, e_version, and the entry point address.
+
+Still writing ELF header bytes...
+
+Filling in the remaining program header fields—flags, vaddr, paddr, filesz, memsz, and align—then double-checking that memsz covers the BSS range properly within the 0x2000 segment.
+
+Verifying the program header fields match up correctly, totaling 56 bytes and ending at offset 0x78. Now I'm moving on to laying out the actual machine code starting at offset 120, beginning with the _start routine.
+
+Still writing machine code...
+
+Byte sum checks out at 173 bytes total. Now I'm assembling parseExpr: calling parseTerm, then skip_spaces, loading the current pointer, and checking the next character against '+' and '-' to decide branching into the plus or minus cases.
+
+Continuing with the plus/minus handlers, each advances the cursor, recurses into parseTerm, pops the previous result, and either adds or subtracts before looping back.
+
+Now I'm tracking running byte offsets for each instruction to confirm the overall encoding lines up correctly through the sequence.
+
+With that verified, I'm starting parseTerm's machine code, encoding calls to parseFactor and skip_spaces, then loading the cursor and checking the current character against '*' and '/' to decide whether to jump into multiplication or division handling.
+
+Still writing machine code bytes... Now I'm double-checking each instruction's byte offsets to make sure the jump targets and call addresses line up correctly.
+
+With offsets confirmed, I'm moving into parseFactor, encoding instructions that skip whitespace, load the current pointer, check for an opening parenthesis, and branch to either parse a parenthesized expression or call parse_number.
+
+Good, offsets check out at 412. Now I'm writing parse_number: it zeroes the accumulator, reads the current character, and loops while the digit is within '0'-'9', multiplying the accumulator by 10 and subtracting the ASCII offset to build the numeric value, exiting the loop once a non-digit is found.
+
+Offsets confirmed through N15, landing at 473. Now I'm encoding the skip_spaces routine: saving registers, loading the cursor pointer, checking each byte for a space character, and looping to advance past spaces until a non-space is found, then storing the updated pointer back.
+
+Verifying the byte lengths offset by offset, everything lands exactly at 514, confirming the function is correctly encoded. Now I'm starting print_number, setting up a buffer pointer and writing a newline byte, then zeroing a counter register before testing whether the value in rax is zero or negative.
+
+Continuing print_number: I'm branching on the sign, flagging negative numbers and negating rax, then dividing repeatedly by 10 to extract digits, converting each remainder to ASCII, and writing them backward into the buffer, looping until the quotient hits zero.
+
+Now I'm handling the sign flag—if negative, I prepend a minus sign, then compute the string pointer and length before issuing a write syscall and returning. I'm starting to double-check the byte lengths and offsets against the actual machine code.
+
+The file size totals 613 bytes, matching the program header's size field. I'm now verifying individual instruction encodings — confirming the register-immediate move and byte-store-to-memory opcodes are byte-correct, checking REX prefixes and ModRM fields against the expected hex output.
+
+Still encoding instructions...
+
+Still verifying opcode encodings...
+
+Still encoding instructions...
+
+Still encoding register opcodes...
+
+Filling in jb/ja/je/jne opcodes confirms the comparison jump encodings. Checking parseFactor's flow after the recursive expression call, rax holds the result correctly through the space-skip and closing-paren consumption before returning. I also verify edge cases like leading spaces, plain numbers with no parens, and trailing whitespace after the expression — all handled correctly by the existing skip_spaces logic.
+
+Null termination after reading input is safe even at buffer boundaries since the newline stops parsing first. Malformed input with no digits would return 0 from parse_number, but that's outside the guaranteed input spec, so I trace through a negative-result example like "1-5" to confirm the subtraction logic produces -4 correctly.
+
+I verify that print_number handles negatives properly, producing "-4\n", then check division truncation toward zero using idiv's behavior, tracing through a case with an intermediate negative value like (0-7)/2 to confirm the term-parsing logic handles the division correctly.
+
+Now I'm checking the output buffer length calculation, confirming the newline position and that the length subtraction correctly spans from the first digit (or sign) through the newline character.
+
+Wait, I need to check memory layout overlap: BUF spans 0x401008 to 0x401107 (256 bytes), but OUTBUF starts at 0x401100, which falls inside that range — these two buffers actually overlap.
+
+Since the output writes happen after BUF has already served its purpose, this might be harmless, but I'd rather relocate OUTBUF to 0x401200 to be safe, keeping everything within BSS bounds and clear of BUF's range. I'll update the relevant instructions encoding the new OUTBUF address and its endpoint accordingly.
+
+I confirm e_entry at 0x400078 lines up correctly with the ELF header plus program header size, then start assembling the full hex output byte by byte.
+
+Writing ELF header bytes...
+
+Writing program header bytes...
+
+Writing the raw machine code for _start, which zeroes a register, sets up a syscall to write a string, increments a pointer, patches a byte, performs another syscall with buffer parameters, calls two subroutines, and finally sets up an exit syscall.
+
+Now I'm writing parseExpr and parseTerm, recursive-descent parsing routines operating directly on raw memory addresses -- loading a byte from a buffer pointer, checking it against ASCII characters for '+' and '-' to decide whether to branch or return, recursing into parseTerm, and doing pointer arithmetic to add or subtract results before looping back.
+
+Writing parse_number and skip_spaces assembly...
+
+Finishing the print_number routine, then verifying total byte count equals 613 against the ELF header plus program header sizes, confirming code section is 493 bytes. I'm rechecking the relative jump offsets for the parseExpr loop instructions to make sure the signed 32-bit displacement calculations are correct.
+
+Continuing to verify the relative offset calculations for each call site, confirming the forward references all check out against their targets.
+
+Now checking the conditional jump offsets - je instructions for plus, minus, mul, div, paren branches, and the jb bounds check all compute correctly against their target positions.
+
+Then I tally each function's byte count to confirm the total matches: 53+89+92+58+61+41+99 sums to 493, plus 120 header bytes gives 613 total, which checks out. Now I'm ready to produce the final hex output.
+
+I double-check some edge cases: RWX segments are generally fine on Linux despite strict W^X policies elsewhere, the entry point is mapped executable within the segment, and the kernel sets up the stack automatically so push/pop/call work without extra setup. Stack alignment doesn't matter since there's no SSE usage, and if the read syscall somehow errors negatively that's an edge case I'm not worrying about since normal stdin input should work fine. I also verify the register-move instruction encoding for loading the buffer address is correct.
+
+Writing syscall instructions...
+
+Writing out the machine code bytes...
+
+Still writing assembly routines...
+

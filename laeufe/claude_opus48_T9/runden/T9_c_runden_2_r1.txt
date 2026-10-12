@@ -1,0 +1,190 @@
+Hier ist meine Lösung:
+
+**Ansatz:** Ich parse jede Zeile mit rekursivem Abstieg in einen AST (Knotenpool via `malloc`). Funktionsdefinitionen speichern ihren Body-AST. `print`/Zuweisungen werden sofort ausgewertet. Die Auswertung nutzt eine Umgebung für Parameter (zuerst durchsucht), dann globale Variablen. Der Ternär-Operator wertet nur den gewählten Zweig aus, Division/Modulo nutzen direkt C-Semantik (Trunkierung Richtung null).
+
+BEGIN_C
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+typedef long long ll;
+
+enum{N_NUM,N_VAR,N_CALL,N_BIN,N_TERN};
+enum{OP_ADD,OP_SUB,OP_MUL,OP_DIV,OP_MOD,OP_LT,OP_GT,OP_LE,OP_GE,OP_EQ,OP_NE};
+
+typedef struct Node{
+  int type; ll num; char name[9]; int op;
+  struct Node *a,*b,*c; struct Node *args[4]; int nargs;
+} Node;
+
+static Node* newnode(int t){ Node*n=(Node*)calloc(1,sizeof(Node)); n->type=t; return n; }
+
+typedef struct{char name[9]; ll val;} Var;
+static Var vars[64]; static int nvars=0;
+
+typedef struct{char name[9]; int np; char params[4][9]; Node* body;} Func;
+static Func funcs[32]; static int nfuncs=0;
+
+typedef struct{int n; char names[4][9]; ll vals[4];} Env;
+
+static const char* P;
+static void skip(){ while(*P==' '||*P=='\t'||*P=='\r') P++; }
+static int isname(char c){ return c>='a'&&c<='z'; }
+static int readident(char*buf){
+  skip(); int i=0;
+  while(isname(*P)&&i<8){ buf[i++]=*P++; }
+  buf[i]=0; return i;
+}
+
+static Node* parseExpr();
+
+static Node* parsePrimary(){
+  skip();
+  if(*P=='('){ P++; Node*e=parseExpr(); skip(); if(*P==')')P++; return e; }
+  if(*P>='0'&&*P<='9'){
+    ll v=0;
+    while(*P>='0'&&*P<='9'){ v=v*10+(*P-'0'); P++; }
+    Node*n=newnode(N_NUM); n->num=v; return n;
+  }
+  char buf[16]; readident(buf); skip();
+  if(*P=='('){
+    P++; Node*n=newnode(N_CALL); strcpy(n->name,buf); n->nargs=0; skip();
+    if(*P!=')'){
+      while(1){
+        n->args[n->nargs++]=parseExpr(); skip();
+        if(*P==','){P++; continue;}
+        break;
+      }
+    }
+    skip(); if(*P==')')P++;
+    return n;
+  } else {
+    Node*n=newnode(N_VAR); strcpy(n->name,buf); return n;
+  }
+}
+
+static Node* parseMul(){
+  Node*l=parsePrimary();
+  while(1){
+    skip(); int op;
+    if(*P=='*')op=OP_MUL; else if(*P=='/')op=OP_DIV; else if(*P=='%')op=OP_MOD; else break;
+    P++; Node*r=parsePrimary();
+    Node*n=newnode(N_BIN); n->op=op; n->a=l; n->b=r; l=n;
+  }
+  return l;
+}
+
+static Node* parseAdd(){
+  Node*l=parseMul();
+  while(1){
+    skip(); int op;
+    if(*P=='+')op=OP_ADD; else if(*P=='-')op=OP_SUB; else break;
+    P++; Node*r=parseMul();
+    Node*n=newnode(N_BIN); n->op=op; n->a=l; n->b=r; l=n;
+  }
+  return l;
+}
+
+static Node* parseCompare(){
+  Node*l=parseAdd();
+  while(1){
+    skip(); int op=-1;
+    if(*P=='<'){ if(P[1]=='='){op=OP_LE;P+=2;} else {op=OP_LT;P++;} }
+    else if(*P=='>'){ if(P[1]=='='){op=OP_GE;P+=2;} else {op=OP_GT;P++;} }
+    else if(*P=='='&&P[1]=='='){op=OP_EQ;P+=2;}
+    else if(*P=='!'&&P[1]=='='){op=OP_NE;P+=2;}
+    else break;
+    Node*r=parseAdd();
+    Node*n=newnode(N_BIN); n->op=op; n->a=l; n->b=r; l=n;
+  }
+  return l;
+}
+
+static Node* parseExpr(){
+  Node*cond=parseCompare(); skip();
+  if(*P=='?'){
+    P++; Node*a=parseExpr(); skip(); if(*P==':')P++;
+    Node*b=parseExpr();
+    Node*n=newnode(N_TERN); n->a=cond; n->b=a; n->c=b; return n;
+  }
+  return cond;
+}
+
+static ll eval(Node*n, Env*env){
+  switch(n->type){
+   case N_NUM: return n->num;
+   case N_VAR:{
+     for(int i=0;i<env->n;i++) if(strcmp(env->names[i],n->name)==0) return env->vals[i];
+     for(int i=0;i<nvars;i++) if(strcmp(vars[i].name,n->name)==0) return vars[i].val;
+     return 0;
+   }
+   case N_TERN:
+     return eval(n->a,env)? eval(n->b,env): eval(n->c,env);
+   case N_CALL:{
+     int fi=-1;
+     for(int i=0;i<nfuncs;i++) if(strcmp(funcs[i].name,n->name)==0){fi=i;break;}
+     Func*f=&funcs[fi];
+     Env ne; ne.n=f->np;
+     for(int i=0;i<f->np;i++){
+       strcpy(ne.names[i],f->params[i]);
+       ne.vals[i]=eval(n->args[i],env);
+     }
+     return eval(f->body,&ne);
+   }
+   case N_BIN:{
+     ll a=eval(n->a,env), b=eval(n->b,env);
+     switch(n->op){
+       case OP_ADD:return a+b; case OP_SUB:return a-b; case OP_MUL:return a*b;
+       case OP_DIV:return a/b; case OP_MOD:return a%b;
+       case OP_LT:return a<b; case OP_GT:return a>b; case OP_LE:return a<=b;
+       case OP_GE:return a>=b; case OP_EQ:return a==b; case OP_NE:return a!=b;
+     }
+   }
+  }
+  return 0;
+}
+
+int main(void){
+  char line[300];
+  Env empty; empty.n=0;
+  while(fgets(line,sizeof line,stdin)){
+    P=line; skip();
+    if(*P==0||*P=='\n') continue;
+    char buf[16]; const char* save=P; readident(buf);
+    if(strcmp(buf,"def")==0){
+      char fname[16]; readident(fname);
+      skip(); if(*P=='(')P++;
+      Func f; strcpy(f.name,fname); f.np=0;
+      skip();
+      if(*P!=')'){
+        while(1){
+          char pb[16]; readident(pb);
+          strcpy(f.params[f.np++],pb);
+          skip();
+          if(*P==','){P++; continue;}
+          break;
+        }
+      }
+      skip(); if(*P==')')P++;
+      skip(); if(*P=='=')P++;
+      f.body=parseExpr();
+      funcs[nfuncs++]=f;
+    } else if(strcmp(buf,"print")==0){
+      Node*e=parseExpr();
+      ll v=eval(e,&empty);
+      printf("%lld\n",v);
+    } else {
+      // assignment: buf is name
+      skip(); if(*P=='=')P++;
+      Node*e=parseExpr();
+      ll v=eval(e,&empty);
+      int idx=-1;
+      for(int i=0;i<nvars;i++) if(strcmp(vars[i].name,buf)==0){idx=i;break;}
+      if(idx<0){ idx=nvars++; strcpy(vars[idx].name,buf); }
+      vars[idx].val=v;
+      (void)save;
+    }
+  }
+  return 0;
+}
+END_C

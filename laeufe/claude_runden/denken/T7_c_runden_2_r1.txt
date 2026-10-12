@@ -1,0 +1,2 @@
+I'm planning a simple recursive descent parser for arithmetic expressions, using C integer division (which truncates toward zero) and handling input via fgets, while structuring the grammar into expression, term, and factor levels with optional unary minus support.
+

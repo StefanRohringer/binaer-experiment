@@ -1,0 +1,81 @@
+The user wants a complete C program for Linux that:
+1. Reads from stdin until EOF, up to 100 non-negative integers (each less than 1000000)
+2. Each integer is on its own line, ending with newline
+3. Sorts them in ascending order
+4. Prints them one per line with newline
+5. Exit code 0
+
+Compiled with "gcc -O2", can use standard C library.
+
+Let me write a simple C program:
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+
+int main(void) {
+    int nums[100];
+    int count = 0;
+    int val;
+
+    while (count < 100 && scanf("%d", &val) == 1) {
+        nums[count++] = val;
+    }
+
+    for (int i = 0; i < count - 1; i++) {
+        for (int j = i + 1; j < count; j++) {
+            if (nums[j] < nums[i]) {
+                int tmp = nums[i];
+                nums[i] = nums[j];
+                nums[j] = tmp;
+            }
+        }
+    }
+
+    for (int i = 0; i < count; i++) {
+        printf("%d\n", nums[i]);
+    }
+
+    return 0;
+}
+```
+
+This should work. Let me consider edge cases:
+- If there are fewer than 100 numbers, we just process what we read
+- If there are 0 numbers, we output nothing
+- The numbers are non-negative and less than 1000000, so they fit in an int easily
+- Each is on its own line, but `scanf("%d", &val)` handles whitespace including newlines, so it works fine
+- We read up to 100 numbers or until EOF, whichever comes first
+
+I'll use `qsort` from `stdlib.h` instead of a manual sort for cleanliness, or I could keep the insertion sort which is fine for at most 100 elements. Let me use `qsort` for clarity:
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+
+static int cmp(const void *a, const void *b) {
+    int x = *(const int *)a;
+    int y = *(const int *)b;
+    return (x > y) - (x < y);
+}
+
+int main(void) {
+    int nums[100];
+    int count = 0;
+    int val;
+
+    while (count < 100 && scanf("%d", &val) == 1) {
+        nums[count++] = val;
+    }
+
+    qsort(nums, (size_t)count, sizeof(int), cmp);
+
+    for (int i = 0; i < count; i++) {
+        printf("%d\n", nums[i]);
+    }
+
+    return 0;
+}
+```
+
+This is clean and correct. Let me verify the format: BEGIN_C, code, END_C.
