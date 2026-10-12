@@ -1,8 +1,20 @@
-# Binär-Experiment: Kann ein Modell Programme direkt als Maschinencode schreiben?
+# Binär-Experiment: Kann ein KI-Modell Programme direkt als Maschinencode schreiben?
 
-Prüfstand: sieben Aufgaben steigender Größe (aufgaben.py), je Aufgabe Läufe im Modus
-`bin` (komplette ELF64-Datei als Hex, ohne Compiler) und `c` (C-Quelltext, gcc -O2) als Vergleich.
-Erster Lauf mit Claude Opus 5.5 vom 12.10.2026: siehe ERGEBNIS.md und laeufe/claude_opus_2026-10-12/.
+Ein Sprachmodell bekommt eine Programmieraufgabe und muss die fertige, ausführbare Datei als rohe Bytes
+abliefern: eine komplette ELF64-Datei für Linux x86-64 als Hexdump, ohne Compiler und ohne Assembler.
+Zum Vergleich löst es dieselbe Aufgabe in C, das gcc übersetzt. Neun Aufgaben steigender Größe
+(aufgaben.py) von "Hallo Welt" bis zu einem kleinen Interpreter mit Funktionen und Rekursion.
+
+**Ergebnis in Kürze** (Stand 13.10.2026, Details in [ERGEBNIS.md](ERGEBNIS.md)): Claude Opus 4.8 schreibt
+korrekten Maschinencode bis etwa 900 Byte (T8, Variablenrechner), mit höchstens einer Korrekturrunde, braucht
+dafür aber 40- bis 60-mal so viele Tokens wie für die C-Lösung. Bei rund 1,5 KB (T9, Funktionsrechner) bricht
+es ein: vier Versuche mit je 128000 Tokens Denken, keine einzige Datei. C hält bei allen Größen. Claude Opus 5.5
+lehnt Binär-Anfragen über die API fast immer per Sicherheitsfilter ab; das 1-Bit-quantisierte Bonsai 27B
+schaffte kein einziges lauffähiges Binary. Alle Modellantworten, Denkzusammenfassungen und Rückmeldungen
+liegen unter laeufe/.
+
+Prüfstand: je Aufgabe Läufe im Modus `bin` (ELF64 als Hex) und `c` (C-Quelltext, gcc -O2), wahlweise mit
+Rundenmodus, in dem das Modell nach Bau- und Testergebnis nachbessern darf.
 
 ## Voraussetzungen
 Linux x86-64, Python 3, gcc. Keine Zusatzpakete.
