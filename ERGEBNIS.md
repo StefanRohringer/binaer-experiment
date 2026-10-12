@@ -113,8 +113,8 @@ Befunde:
   selbst richtig. Alle anderen 11 Läufe gelangen in Runde 1.
 - Ablehnungsmuster von Opus 5.5 wie in Lauf 3: T4 (auch als C) und alle Binär-Anfragen außer T1 bin 2. Wieder nicht
   deterministisch (T1 bin 2 durch, T1 bin 1 nicht; T1 C und T7 C nie abgelehnt).
-- Opus-4.8-Binaries sind etwas größer als die von Opus 5.5 in Lauf 1 (T4: 215–220 B gegen 213–233 B, vergleichbar;
-  T1: 167 B gegen 162–164 B) und brauchen deutlich mehr Denkzeit (T4: 120 s gegen 16–170 s in Lauf 1, Mittel dort niedriger).
+- Die Größen der Opus-4.8-Binaries entsprechen denen von Opus 5.5 in Lauf 1 (T4: 215–220 B gegen 213–233 B; T1: 167 B
+  gegen 162–164 B). Zur Denkzeit gibt es keinen sauberen Vergleich: Lauf 1 lief über Claude Code ohne Zeitmessung je Aufgabe.
 - Gesamtaufwand: Binär 958 s / 85811 Tokens, C 35 s / 3174 Tokens (Faktor ~27 bei Tokens).
 
 # Lauf 5: Claude Opus 4.8 allein, Rundenmodus (12.10.2026, 21:10 Uhr)
@@ -227,7 +227,7 @@ bis zu 4 Runden. Der Lauf wurde nach Runde 2 abgebrochen, weil alle vier Binär-
 | Modus | Ergebnis | Runden | Größe | Dauer je Runde | Tokens je Runde |
 |---|---|---|---|---|---|
 | Binär | 0/2, abgebrochen nach Runde 2 | 2 + 2 ohne Abgabe | – | 22 bis 24 min | 128000 (Grenze) |
-| C | 2/2 | 1 / 1 | 16,6 KB (224 Zeilen) | 104 / 116 s | 9288 / 10553 |
+| C | 2/2 | 1 / 1 | 20,8 KB gebaut (Quelltext 224 Zeilen) | 104 / 116 s | 9288 / 10553 |
 
 Befunde:
 - Hier bricht Binär ein. In vier Runden (zwei Läufe mal zwei Runden) kam keine einzige Datei. Jede Runde verbrauchte die
