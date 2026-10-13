@@ -89,3 +89,9 @@ aber nicht geprüft: am besten in einer VM, einem Container oder unter einem eig
 
 ## RunPod
 Kompletter Lauf in einem Pod: siehe runpod/ANLEITUNG.md
+
+## Lizenz
+
+MIT, siehe [LICENSE](LICENSE).
+
+Das gilt für den Code und die Auswertungen in diesem Repo. llama.cpp (MIT), das Anthropic-SDK (MIT) und das Bonsai-Modell (Apache-2.0) sind nicht enthalten, sie werden beim Einrichten geladen und behalten ihre eigenen Lizenzen.
